@@ -198,8 +198,15 @@ jobs:
           mkdir -p dist
           old_ref="$(jq -er '.metadata.component["bom-ref"]' mcp-doctor.cdx.json)"
           normalized_ref="pkg:cargo/mcp-doctor@${RELEASE_TAG#v}"
-          jq --arg old_ref "${old_ref}" --arg normalized_ref "${normalized_ref}" '
-            .metadata.component["bom-ref"] = $normalized_ref
+          serial_number="$(python3 -c \
+            'import sys, uuid; print(f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, sys.argv[1])}")' \
+            "https://github.com/${GITHUB_REPOSITORY}@${GITHUB_SHA}#${RELEASE_TAG}")"
+          jq \
+            --arg old_ref "${old_ref}" \
+            --arg normalized_ref "${normalized_ref}" \
+            --arg serial_number "${serial_number}" '
+            .serialNumber = $serial_number
+            | .metadata.component["bom-ref"] = $normalized_ref
             | .metadata.component.purl = $normalized_ref
             | .metadata.component.components |= map(
                 (.purl | capture("#(?<path>.+)$").path) as $path
