@@ -1,0 +1,90 @@
+# MCP Doctor Product Specification
+
+[English](PRODUCT_SPEC.md) | [简体中文](PRODUCT_SPEC.zh-CN.md)
+
+## Evidence-backed problem
+
+People configuring local MCP servers repeatedly hit launch failures before a
+protocol request is ever made: `npx` is not on the client process `PATH`, Node
+comes from an NVM shell that the host app does not inherit, or a Windows path
+and working directory is wrong. These are recurring reports in the MCP server
+tracker ([#40](https://github.com/modelcontextprotocol/servers/issues/40),
+[#64](https://github.com/modelcontextprotocol/servers/issues/64),
+[#447](https://github.com/modelcontextprotocol/servers/issues/447)), Cline
+([#1948](https://github.com/cline/cline/issues/1948),
+[#902](https://github.com/cline/cline/issues/902)), Continue
+([#4791](https://github.com/continuedev/continue/issues/4791),
+[#7509](https://github.com/continuedev/continue/issues/7509)), GitHub MCP
+Server ([#1396](https://github.com/github/github-mcp-server/issues/1396)),
+and related Stack Overflow reports ([spawn npx](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection),
+[spawn npx/einval](https://stackoverflow.com/questions/79586881/spawn-npx-enoent-or-spawn-einval-when-configuring-mcp-server-with-cline-exte),
+[VS Code WSL startup](https://stackoverflow.com/questions/79706687/unable-to-start-mcp-servers-in-vs-code-in-wsl)).
+
+## Smallest useful outcome
+
+Given an explicit JSON configuration or a small set of conventional local
+configuration paths, `mcp-doctor` reports whether each local `stdio` server is
+statically ready to launch. It checks command discoverability, explicit command
+paths, working directories, and unresolved placeholders without executing a
+command or retrieving matching values from the process environment. Human
+output is optimized for a developer at a terminal; JSON output is stable enough
+for CI wrappers and never includes configured environment values.
+
+## Supported input boundary
+
+- JSON files with a top-level `mcpServers` map (Claude Desktop, Cline-style).
+- JSON files with a top-level `servers` map (VS Code-style entries with
+  `type: "stdio"`).
+- Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
+- Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
+  inspected; they receive an explicit unsupported-transport diagnostic.
+- YAML, TOML, catalog files, protocol handshakes, and remote transports are
+  intentionally out of scope until independent compatibility evidence exists.
+
+Automatic discovery is intentionally conservative: the current workspace
+`.vscode/mcp.json`, `.mcp.json`, `.cursor/mcp.json`, plus known user config
+locations for Claude Desktop, Cline, and Cursor on the current platform.
+
+## Checks and safety
+
+- Missing or empty `command` is an error.
+- Bare commands are checked against `PATH` without printing `PATH` or its
+  entries. Explicit paths are checked for existence and, on Unix, executable
+  permission.
+- Missing `cwd`, relative `cwd`, and unresolved `${VAR}`, `$VAR`, `%VAR%`, or
+  `{{VAR}}` placeholders are reported with actionable context.
+- Configured environment *keys* may appear in diagnostics; environment values
+  are never read, interpolated, or printed.
+- The default command only reads files and metadata. There is no `--run` or
+  implicit process spawn in this release.
+
+## CLI contract
+
+```text
+mcp-doctor [OPTIONS] [CONFIG ...]
+  --format human|json     Output format (default: human)
+  --ci                    Exit 1 when a check error is found; exit 2 for input errors
+  --no-discover           Inspect only explicit CONFIG paths
+```
+
+With no explicit path, discovery runs. A missing discovered file is not an
+error; an explicitly named missing file is an input error.
+
+## Difference from MCP Inspector
+
+MCP Inspector is the protocol-level debugging tool: it can launch servers,
+perform handshakes, inspect tools, and work with stdio and remote transports.
+MCP Doctor is a preflight layer for the common failure that happens before
+those capabilities can start. It discovers client configuration, statically
+checks local process prerequisites, never launches the server by default, and
+offers CI-friendly JSON/exit codes. It does not replace Inspector and does not
+claim protocol compatibility or server correctness.
+
+## Success and stop conditions
+
+The MVP is successful when a user can identify a missing `npx`/Node path, bad
+working directory, or unresolved placeholder from a config without exposing a
+secret or running a server. Stop expanding the parser when a format lacks
+independent compatibility evidence; validate demand through concrete issue or
+discussion reports before adding another client format or a process execution
+mode.

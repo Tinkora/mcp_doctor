@@ -1,0 +1,21 @@
+[package]
+name = "mcp-doctor"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Static diagnostics for local stdio MCP server configurations"
+license = "MIT"
+repository = "https://github.com/Tinkora/mcp_doctor"
+homepage = "https://github.com/Tinkora/mcp_doctor"
+keywords = ["mcp", "developer-tools", "cli", "diagnostics"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+tempfile = "3.0"

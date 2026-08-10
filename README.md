@@ -1,0 +1,122 @@
+# MCP Doctor
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+`mcp-doctor` is a local, static preflight checker for stdio MCP server
+configuration. It helps an agent developer find the launch failures that often
+happen before MCP Inspector or a client can start a server: a missing `npx` or
+Node binary on `PATH`, an invalid working directory, and unresolved environment
+placeholders.
+
+> Status: Alpha (`v0.1.0` scope). This release is intentionally CLI-only and
+> does not launch configured commands or connect to any MCP server.
+
+## Why this exists
+
+The same startup failures recur in real client reports:
+
+- [MCP servers #40](https://github.com/modelcontextprotocol/servers/issues/40)
+  and [#64](https://github.com/modelcontextprotocol/servers/issues/64) cover
+  Windows `npx` and Node/NVM path problems.
+- [MCP servers #447](https://github.com/modelcontextprotocol/servers/issues/447)
+  covers Windows path handling.
+- [Cline #1948](https://github.com/cline/cline/issues/1948) and
+  [#902](https://github.com/cline/cline/issues/902) report `spawn npx` and
+  startup failures.
+- [Continue #4791](https://github.com/continuedev/continue/issues/4791) and
+  [#7509](https://github.com/continuedev/continue/issues/7509) report missing
+  `npx` and timeouts.
+- [GitHub MCP server #1396](https://github.com/github/github-mcp-server/issues/1396)
+  reports local server startup configuration problems.
+
+The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
+shows the same failure mode outside one specific client.
+
+## Install
+
+Build from source with Rust 1.85 or newer:
+
+```bash
+git clone https://github.com/Tinkora/mcp_doctor.git
+cd mcp_doctor
+cargo install --path . --locked
+```
+
+## Quick start
+
+Inspect one file explicitly:
+
+```bash
+mcp-doctor ~/.cursor/mcp.json
+```
+
+With no path, MCP Doctor checks existing conventional files in the current
+workspace and the current user's known Claude Desktop, Cline, and Cursor paths:
+
+```bash
+mcp-doctor
+```
+
+For automation, use stable JSON and fail only when a static check is an error:
+
+```bash
+mcp-doctor --format json --ci .vscode/mcp.json
+echo "$?" # 0 = no errors, 1 = check error, 2 = input error
+```
+
+The default human report identifies the server, location, finding code, and a
+short remediation hint. It never prints configured environment values.
+
+## Supported configuration
+
+The MVP reads JSON only:
+
+- a top-level `mcpServers` map (Claude Desktop and Cline-style files);
+- a top-level `servers` map (VS Code-style entries);
+- stdio fields `command`, optional string-array `args`, optional string `cwd`,
+  and optional string-map `env`.
+
+Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are reported as
+unsupported and are not contacted. YAML, TOML, MCP catalog files, protocol
+handshakes, and server execution are out of scope until independent demand and
+compatibility evidence justify them.
+
+## Safety and privacy
+
+MCP Doctor is read-only by default. It reads the selected JSON file and file
+metadata, and reads the process `PATH` only to test bare command discoverability.
+It does not spawn a process, perform a network request, retrieve a matching
+value from the process environment, or include configured environment values in
+its reports. Environment variable names may appear in a placeholder diagnostic.
+Remove secrets before sharing a config file.
+
+## MCP Inspector boundary
+
+[MCP Inspector](https://github.com/modelcontextprotocol/inspector) is the
+protocol debugger: it can launch servers, perform handshakes, inspect tools,
+and work with stdio and remote transports. MCP Doctor is the preflight layer
+before that workflow. It discovers client config, checks local process
+prerequisites statically, and provides CI-friendly JSON and exit codes. It does
+not replace Inspector or claim that a server implements the MCP protocol
+correctly.
+
+## Development
+
+```bash
+cargo fmt --all -- --check
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
+```
+
+The test suite covers supported envelopes, command/PATH and cwd diagnostics,
+placeholder redaction, unsupported transports, malformed input, CLI output,
+CI exit codes, and the no-execution boundary.
+
+Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
+supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),
+[SECURITY.md](SECURITY.md), and [CHANGELOG.md](CHANGELOG.md) before making a
+change.
+
+## License
+
+[MIT](LICENSE) Copyright Tinkora contributors.
