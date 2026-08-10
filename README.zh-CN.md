@@ -32,6 +32,11 @@ cd mcp_doctor
 cargo install --path . --locked
 ```
 
+带 tag 的 Release 还会提供 Linux x86-64、macOS Apple Silicon、macOS x86-64
+和 Windows x86-64 预编译归档。每个归档都附带对应的 SHA-256 checksum 和 GitHub
+artifact attestation，可从 [Releases 页面](https://github.com/Tinkora/mcp_doctor/releases)
+下载。
+
 ## 快速开始
 
 显式检查一个配置文件：
@@ -57,6 +62,17 @@ echo "$?" # 0 = 无错误，1 = 检查错误，2 = 输入错误
 默认人类报告会列出 server、位置、诊断代码和简短修复提示，但不会打印配置中的
 环境变量值。
 
+### 如何理解路径检查
+
+裸命令只根据启动 MCP Doctor 的当前环境检查。`path_context` warning 表示该命令在
+当前环境中存在，但 GUI MCP 客户端可能继承不同的 `PATH`。为了保护配置值，检查不会
+使用 `env.PATH`。Windows 上会使用当前 `PATHEXT`；缺失时回退到
+`.COM;.EXE;.BAT;.CMD`。
+
+绝对命令路径和绝对工作目录可以确定性检查。相对 `cwd` 或相对命令路径的解析基准
+取决于客户端时，只报告 warning；如果 `cwd` 是绝对路径，则会据此检查相对命令。
+这样不会假设 Claude Desktop、Cline、Cursor 和 VS Code 对所有相对路径采用相同语义。
+
 ## 支持的配置
 
 MVP 只读取 JSON：
@@ -72,7 +88,9 @@ MVP 只读取 JSON：
 
 MCP Doctor 默认只读。它读取指定 JSON 和文件元数据，并读取进程 `PATH` 来检查裸命令
 可发现性。它不会启动进程、发起网络请求、从进程环境中读取占位符对应的值，也不会在
-报告中包含配置的环境变量值。占位符诊断可能出现环境变量名。分享配置前请先移除 secret。
+报告中包含配置的环境变量值。占位符诊断使用通用消息，不回显占位符 token；环境变量
+key 和 server 名称可能作为位置出现，但 human 输出会转义终端控制字符。分享配置前请先
+移除 secret。
 
 ## 与 MCP Inspector 的边界
 
@@ -89,8 +107,9 @@ cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 ```
 
-测试覆盖支持的配置封装、命令/PATH 和 cwd 诊断、占位符脱敏、不支持的传输、坏输入、
-CLI 输出、CI 退出码和“不执行命令”边界。
+测试覆盖支持的配置封装、当前进程 PATH 与 `PATHEXT`、确定和客户端相关的路径诊断、
+占位符脱敏、终端安全输出、不支持的传输、坏输入、JSON 路径编码、CLI 退出码和
+“不执行命令”边界。
 
 请阅读[产品规格](docs/PRODUCT_SPEC.zh-CN.md)了解证据门槛、发现路径和停止条件；修改前请阅读
 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)、[SECURITY.zh-CN.md](SECURITY.zh-CN.md) 和

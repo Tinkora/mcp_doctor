@@ -42,6 +42,11 @@ cd mcp_doctor
 cargo install --path . --locked
 ```
 
+Tagged releases also provide prebuilt archives for Linux x86-64, macOS Apple
+Silicon and x86-64, and Windows x86-64. Each archive has a matching SHA-256
+checksum and a GitHub artifact attestation on the
+[Releases page](https://github.com/Tinkora/mcp_doctor/releases).
+
 ## Quick start
 
 Inspect one file explicitly:
@@ -67,6 +72,21 @@ echo "$?" # 0 = no errors, 1 = check error, 2 = input error
 The default human report identifies the server, location, finding code, and a
 short remediation hint. It never prints configured environment values.
 
+### Interpreting path checks
+
+Bare commands are checked only against the environment that launched MCP
+Doctor. A `path_context` warning means the command exists there, but a GUI MCP
+client may inherit a different `PATH`. Values configured in `env.PATH` are not
+used for lookup because configured environment values stay private. On Windows,
+lookup honors the current `PATHEXT`, falling back to
+`.COM;.EXE;.BAT;.CMD`.
+
+Absolute command paths and absolute working directories can be checked
+deterministically. A relative `cwd` or command path receives a warning when its
+base depends on the client. If `cwd` is absolute, a relative command path is
+checked against it. These warnings avoid pretending that Claude Desktop, Cline,
+Cursor, and VS Code resolve every relative path the same way.
+
 ## Supported configuration
 
 The MVP reads JSON only:
@@ -87,8 +107,10 @@ MCP Doctor is read-only by default. It reads the selected JSON file and file
 metadata, and reads the process `PATH` only to test bare command discoverability.
 It does not spawn a process, perform a network request, retrieve a matching
 value from the process environment, or include configured environment values in
-its reports. Environment variable names may appear in a placeholder diagnostic.
-Remove secrets before sharing a config file.
+its reports. Placeholder diagnostics are generic and do not echo the placeholder
+token. Environment keys and server names can appear as locations, while terminal
+control characters in human output are escaped. Remove secrets before sharing a
+config file.
 
 ## MCP Inspector boundary
 
@@ -108,9 +130,10 @@ cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 ```
 
-The test suite covers supported envelopes, command/PATH and cwd diagnostics,
-placeholder redaction, unsupported transports, malformed input, CLI output,
-CI exit codes, and the no-execution boundary.
+The test suite covers supported envelopes, current-process PATH and `PATHEXT`,
+deterministic and client-dependent path diagnostics, placeholder redaction,
+terminal-safe output, unsupported transports, malformed input, JSON path
+encoding, CLI exit codes, and the no-execution boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),

@@ -48,15 +48,25 @@ locations for Claude Desktop, Cline, and Cursor on the current platform.
 ## Checks and safety
 
 - Missing or empty `command` is an error.
-- Bare commands are checked against `PATH` without printing `PATH` or its
-  entries. Explicit paths are checked for existence and, on Unix, executable
-  permission.
-- Missing `cwd`, relative `cwd`, and unresolved `${VAR}`, `$VAR`, `%VAR%`, or
-  `{{VAR}}` placeholders are reported with actionable context.
-- Configured environment *keys* may appear in diagnostics; environment values
-  are never read, interpolated, or printed.
+- Bare commands are checked against MCP Doctor's current process `PATH` without
+  printing `PATH` or its entries. The result does not claim to reproduce a GUI
+  client's environment or a configured `env.PATH`. Windows lookup uses the
+  current `PATHEXT` with the platform defaults as a fallback.
+- Absolute command paths and working directories are checked for existence and,
+  on Unix, executable permission. A relative command path is checked only when
+  an absolute `cwd` supplies a deterministic base. Other relative command and
+  working-directory paths receive a client-context warning rather than a
+  speculative error.
+- Unresolved `${VAR}`, `$VAR`, `%VAR%`, or `{{VAR}}` placeholders are reported
+  without echoing the token or configured value.
+- Configured environment *keys* may appear in diagnostic locations. Values are
+  parsed only for static empty-value and placeholder checks; they are not
+  interpolated, used for command lookup, or emitted.
 - The default command only reads files and metadata. There is no `--run` or
   implicit process spawn in this release.
+- Human output escapes terminal control characters from configuration content.
+  JSON paths that are not valid UTF-8 are represented lossily instead of
+  causing a successful command to emit no JSON.
 
 ## CLI contract
 

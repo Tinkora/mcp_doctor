@@ -5,7 +5,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -14,6 +14,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, Default)]
 pub struct CheckContext {
     pub path_entries: Vec<PathBuf>,
+    pub command_extensions: Vec<String>,
 }
 
 impl CheckContext {
@@ -23,12 +24,49 @@ impl CheckContext {
     {
         Self {
             path_entries: entries.into_iter().collect(),
+            command_extensions: default_command_extensions(),
+        }
+    }
+
+    pub fn with_path_and_extensions<I, E>(entries: I, extensions: E) -> Self
+    where
+        I: IntoIterator<Item = PathBuf>,
+        E: IntoIterator<Item = String>,
+    {
+        Self {
+            path_entries: entries.into_iter().collect(),
+            command_extensions: extensions.into_iter().collect(),
         }
     }
 
     pub fn from_system() -> Self {
         let path = env::var_os("PATH").unwrap_or_default();
-        Self::with_path(env::split_paths(&path))
+        let mut context = Self::with_path(env::split_paths(&path));
+        if cfg!(windows) {
+            context.command_extensions = env::var_os("PATHEXT")
+                .map(|value| {
+                    value
+                        .to_string_lossy()
+                        .split(';')
+                        .filter(|extension| !extension.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .filter(|extensions: &Vec<String>| !extensions.is_empty())
+                .unwrap_or_else(default_command_extensions);
+        }
+        context
+    }
+}
+
+fn default_command_extensions() -> Vec<String> {
+    if cfg!(windows) {
+        [".COM", ".EXE", ".BAT", ".CMD"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -70,8 +108,10 @@ pub enum FindingCode {
     CommandMissing,
     CommandNotFound,
     CommandNotExecutable,
+    RelativeCommandPath,
     CwdNotFound,
     RelativeCwd,
+    PathContext,
     Placeholder,
     EmptyEnv,
     UnsupportedTransport,
@@ -94,9 +134,17 @@ pub struct ServerReport {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FileReport {
+    #[serde(serialize_with = "serialize_path")]
     pub path: PathBuf,
     pub servers: Vec<ServerReport>,
     pub findings: Vec<Finding>,
+}
+
+fn serialize_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&path.to_string_lossy())
 }
 
 impl FileReport {
@@ -204,7 +252,6 @@ fn inspect_document(
             transport: "stdio",
         });
         ServerCheck {
-            path,
             server: name,
             command,
             args: &args,
@@ -292,7 +339,6 @@ fn parse_string_map(
 }
 
 struct ServerCheck<'a> {
-    path: &'a Path,
     server: &'a str,
     command: Option<&'a str>,
     args: &'a [String],
@@ -312,14 +358,7 @@ impl ServerCheck<'_> {
                 "stdio server command is missing or empty",
             ));
         } else if let Some(command) = self.command {
-            check_command(
-                self.path,
-                self.server,
-                command,
-                self.cwd,
-                self.context,
-                findings,
-            );
+            check_command(self.server, command, self.cwd, self.context, findings);
         }
         self.check_cwd(findings);
         self.check_args(findings);
@@ -339,11 +378,11 @@ impl ServerCheck<'_> {
                 Severity::Warning,
                 self.server,
                 "cwd",
-                "working directory is relative; resolve it from the configuration location",
+                "working directory is relative and its base depends on the client; use an absolute path for a deterministic check",
             ));
+            return;
         }
-        let resolved = resolve_from_config(self.path, cwd_path);
-        if !resolved.is_dir() {
+        if !cwd_path.is_dir() {
             findings.push(finding(
                 FindingCode::CwdNotFound,
                 Severity::Error,
@@ -387,7 +426,6 @@ impl ServerCheck<'_> {
 }
 
 fn check_command(
-    path: &Path,
     server: &str,
     command: &str,
     cwd: Option<&str>,
@@ -402,13 +440,17 @@ fn check_command(
     if command_path.components().count() > 1 || command.contains('/') || command.contains('\\') {
         let resolved = if command_path.is_absolute() {
             command_path.to_path_buf()
-        } else if let Some(cwd) = cwd {
-            if has_placeholder(cwd) {
+        } else {
+            let Some(cwd) = cwd else {
+                findings.push(relative_command_finding(server));
+                return;
+            };
+            let cwd_path = Path::new(cwd);
+            if !cwd_path.is_absolute() || placeholder_name(cwd).is_some() {
+                findings.push(relative_command_finding(server));
                 return;
             }
-            resolve_from_config(path, Path::new(cwd)).join(command_path)
-        } else {
-            resolve_from_config(path, command_path)
+            cwd_path.join(command_path)
         };
         if !resolved.is_file() {
             findings.push(finding(
@@ -431,7 +473,7 @@ fn check_command(
     }
 
     if !context.path_entries.iter().any(|entry| {
-        command_candidate(entry, command)
+        command_candidate(entry, command, &context.command_extensions)
             .is_some_and(|candidate| candidate.is_file() && is_executable(&candidate))
     }) {
         findings.push(finding(
@@ -441,35 +483,39 @@ fn check_command(
             "command",
             "command is not available on the current PATH",
         ));
+    } else {
+        findings.push(finding(
+            FindingCode::PathContext,
+            Severity::Warning,
+            server,
+            "command",
+            "command exists on MCP Doctor's current PATH, but a GUI client may inherit a different PATH; prefer an absolute command path",
+        ));
     }
 }
 
-fn command_candidate(entry: &Path, command: &str) -> Option<PathBuf> {
+fn relative_command_finding(server: &str) -> Finding {
+    finding(
+        FindingCode::RelativeCommandPath,
+        Severity::Warning,
+        server,
+        "command",
+        "command path is relative and its base depends on the client; use an absolute path for a deterministic check",
+    )
+}
+
+fn command_candidate(entry: &Path, command: &str, extensions: &[String]) -> Option<PathBuf> {
     let candidate = entry.join(command);
     if candidate.is_file() {
         return Some(candidate);
     }
-    #[cfg(windows)]
-    {
-        for suffix in [".exe", ".cmd", ".bat"] {
-            let candidate = entry.join(format!("{command}{suffix}"));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
+    for suffix in extensions {
+        let candidate = entry.join(format!("{command}{suffix}"));
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
     None
-}
-
-fn resolve_from_config(config: &Path, value: &Path) -> PathBuf {
-    if value.is_absolute() {
-        value.to_path_buf()
-    } else {
-        config
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(value)
-    }
 }
 
 #[cfg(unix)]
@@ -499,10 +545,6 @@ fn finding(
         location: location.to_string(),
         message: message.to_string(),
     }
-}
-
-fn has_placeholder(value: &str) -> bool {
-    placeholder_name(value).is_some()
 }
 
 fn placeholder_name(value: &str) -> Option<String> {
@@ -561,12 +603,13 @@ pub fn inspect_value(
     server: Option<&str>,
     _context: &CheckContext,
 ) -> Option<Finding> {
-    placeholder_name(value).map(|name| Finding {
+    placeholder_name(value).map(|_| Finding {
         code: FindingCode::Placeholder,
         severity: Severity::Warning,
         server: server.map(str::to_owned),
         location: location.to_string(),
-        message: format!("unresolved environment placeholder {name}; the value was not read"),
+        message: "unresolved environment placeholder; the configured value was not emitted"
+            .to_string(),
     })
 }
 
@@ -639,7 +682,9 @@ mod tests {
         assert_eq!(report.servers.len(), 1);
         assert_eq!(report.servers[0].name, "demo");
         assert!(report.findings.iter().any(|finding| {
-            finding.code == FindingCode::Placeholder && finding.message.contains("API_KEY")
+            finding.code == FindingCode::Placeholder
+                && !finding.message.contains("API_KEY")
+                && !finding.message.contains("super-secret")
         }));
         let serialized = serde_json::to_string(&report).expect("serialize report");
         assert!(!serialized.contains("super-secret"));
@@ -695,10 +740,16 @@ mod tests {
                 .any(|finding| finding.code == FindingCode::CommandNotFound)
         );
         assert!(!marker.exists());
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::PathContext)
+        );
     }
 
     #[test]
-    fn checks_explicit_path_and_relative_working_directory() {
+    fn does_not_assume_a_base_for_relative_paths() {
         let dir = tempdir().expect("tempdir");
         let config = dir.path().join("mcp.json");
         fs::write(
@@ -710,12 +761,10 @@ mod tests {
         let report =
             inspect_file(&config, &CheckContext::with_path(Vec::new())).expect("inspect config");
 
-        assert!(
-            report
-                .findings
-                .iter()
-                .any(|finding| finding.code == FindingCode::CommandNotFound)
-        );
+        assert!(!report.findings.iter().any(|finding| matches!(
+            finding.code,
+            FindingCode::CommandNotFound | FindingCode::CwdNotFound
+        )));
         assert!(
             report
                 .findings
@@ -726,7 +775,7 @@ mod tests {
             report
                 .findings
                 .iter()
-                .any(|finding| finding.code == FindingCode::CwdNotFound)
+                .any(|finding| finding.code == FindingCode::RelativeCommandPath)
         );
     }
 
@@ -772,7 +821,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolves_relative_command_from_config_relative_cwd() {
+    fn reports_relative_command_without_assuming_client_semantics() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempdir().expect("tempdir");
@@ -792,11 +841,44 @@ mod tests {
             inspect_file(&config, &CheckContext::with_path(Vec::new())).expect("inspect config");
 
         assert!(
-            !report
+            report
                 .findings
                 .iter()
-                .any(|finding| finding.code == FindingCode::CommandNotFound)
+                .any(|finding| finding.code == FindingCode::RelativeCommandPath)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_relative_command_against_an_absolute_working_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("tempdir");
+        let executable = dir.path().join("server");
+        fs::write(&executable, "#!/bin/sh\nexit 0\n").expect("write executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let config = dir.path().join("mcp.json");
+        let document = serde_json::json!({
+            "mcpServers": {
+                "demo": {
+                    "command": "./server",
+                    "cwd": dir.path(),
+                }
+            }
+        });
+        fs::write(
+            &config,
+            serde_json::to_vec(&document).expect("serialize config"),
+        )
+        .expect("write config");
+
+        let report =
+            inspect_file(&config, &CheckContext::with_path(Vec::new())).expect("inspect config");
+
+        assert!(!report.findings.iter().any(|finding| matches!(
+            finding.code,
+            FindingCode::RelativeCommandPath | FindingCode::CommandNotFound
+        )));
     }
 
     #[test]
@@ -807,7 +889,7 @@ mod tests {
             .expect("placeholder finding");
 
         assert_eq!(finding.code, FindingCode::Placeholder);
-        assert!(finding.message.contains("env:API_KEY"));
+        assert!(!finding.message.contains("API_KEY"));
     }
 
     #[test]
@@ -834,10 +916,51 @@ mod tests {
     #[test]
     fn env_values_are_never_used_for_placeholder_resolution() {
         let context = CheckContext::with_path(Vec::<PathBuf>::new());
-        let finding =
-            inspect_value("${TOKEN}", "env.TOKEN", None, &context).expect("placeholder finding");
+        let finding = inspect_value(
+            "prefix-$literal_secret_9427-suffix",
+            "env.TOKEN",
+            None,
+            &context,
+        )
+        .expect("placeholder finding");
 
         assert_eq!(finding.code, FindingCode::Placeholder);
-        assert!(!finding.message.contains("secret"));
+        assert!(!finding.message.contains("literal_secret_9427"));
+        assert!(!finding.message.contains("prefix"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn custom_command_extensions_are_checked_without_execution() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().expect("tempdir");
+        let executable = dir.path().join("demo.COM");
+        fs::write(&executable, "not executed").expect("write executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let config = dir.path().join("mcp.json");
+        fs::write(&config, r#"{"mcpServers":{"demo":{"command":"demo"}}}"#).expect("write config");
+        let context = CheckContext::with_path_and_extensions(
+            [dir.path().to_path_buf()],
+            [".COM".to_string()],
+        );
+
+        let report = inspect_file(&config, &context).expect("inspect config");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CommandNotFound)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn default_windows_command_extensions_match_platform_search_defaults() {
+        assert_eq!(
+            default_command_extensions(),
+            [".COM", ".EXE", ".BAT", ".CMD"].map(str::to_owned)
+        );
     }
 }

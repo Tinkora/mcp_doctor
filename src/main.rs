@@ -38,7 +38,7 @@ enum OutputFormat {
 
 #[derive(Debug, Serialize)]
 struct InputError {
-    path: PathBuf,
+    path: String,
     message: String,
 }
 
@@ -75,7 +75,7 @@ fn main() -> ExitCode {
         match inspect_file(&path, &context) {
             Ok(report) => files.push(report),
             Err(error) => errors.push(InputError {
-                path,
+                path: path.to_string_lossy().into_owned(),
                 message: error.to_string(),
             }),
         }
@@ -83,7 +83,11 @@ fn main() -> ExitCode {
     let output = build_output(files, errors);
     match cli.format {
         OutputFormat::Human => print_human(&output),
-        OutputFormat::Json => print_json(&output),
+        OutputFormat::Json => {
+            if !print_json(&output) {
+                return ExitCode::from(2);
+            }
+        }
     }
 
     if !output.errors.is_empty() {
@@ -125,16 +129,20 @@ fn print_human(output: &Output) {
     }
     println!("MCP Doctor (static stdio preflight)");
     for file in &output.files {
-        println!("\nConfig: {}", file.path.display());
+        println!("\nConfig: {}", terminal_text(&file.path.to_string_lossy()));
         for server in &file.servers {
-            println!("  Server: {} [{}]", server.name, server.transport);
+            println!(
+                "  Server: {} [{}]",
+                terminal_text(&server.name),
+                terminal_text(server.transport)
+            );
         }
         for finding in &file.findings {
             print_finding(finding);
         }
     }
     for error in &output.errors {
-        eprintln!("Input error: {}", error.message);
+        eprintln!("Input error: {}", terminal_text(&error.message));
     }
     println!(
         "\nSummary: {} file(s), {} server(s), {} finding(s), {} error(s), {} warning(s)",
@@ -158,14 +166,33 @@ fn print_finding(finding: &Finding) {
         code = serde_json::to_string(&finding.code)
             .unwrap_or_else(|_| "\"unknown\"".to_string())
             .trim_matches('"'),
-        location = finding.location,
-        message = finding.message
+        server = terminal_text(server),
+        location = terminal_text(&finding.location),
+        message = terminal_text(&finding.message)
     );
 }
 
-fn print_json(output: &Output) {
+fn print_json(output: &Output) -> bool {
     match serde_json::to_string_pretty(output) {
-        Ok(value) => println!("{value}"),
-        Err(error) => eprintln!("cannot serialize report: {error}"),
+        Ok(value) => {
+            println!("{value}");
+            true
+        }
+        Err(error) => {
+            eprintln!("cannot serialize report: {error}");
+            false
+        }
     }
+}
+
+fn terminal_text(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character.is_control() {
+            escaped.extend(character.escape_default());
+        } else {
+            escaped.push(character);
+        }
+    }
+    escaped
 }

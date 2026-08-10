@@ -13,5 +13,8 @@ No changes yet.
 - Static JSON diagnostics for local stdio MCP server configuration.
 - Conservative workspace and user-path discovery for common client files.
 - Human and JSON output with `--ci` exit codes.
-- Tests proving configured environment values are not emitted and commands are
-  never executed.
+- Current-process PATH diagnostics with Windows `PATHEXT` support and explicit
+  warnings for client-dependent relative paths.
+- Terminal-safe human output and loss-tolerant JSON path serialization.
+- Tests proving configured environment values and placeholder tokens are not
+  emitted and commands are never executed.

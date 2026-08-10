@@ -109,3 +109,51 @@ fn no_discovery_with_no_inputs_is_an_empty_success() {
             .contains("No MCP configuration files found")
     );
 }
+
+#[test]
+fn human_output_escapes_terminal_control_sequences() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("mcp.json");
+    fs::write(
+        &config,
+        "{\"mcpServers\":{\"\\u001b]8;;https://example.test\\u0007中文\":{\"command\":\"missing\"}}}",
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--no-discover")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.contains(&0x1b));
+    assert!(!output.stdout.contains(&0x07));
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("\\u{1b}"));
+    assert!(stdout.contains("中文"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn json_output_serializes_non_utf8_paths() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let dir = tempdir().expect("tempdir");
+    let config = dir
+        .path()
+        .join(OsString::from_vec(b"mcp-\xff.json".to_vec()));
+    fs::write(&config, r#"{"mcpServers":{"demo":{"command":"missing"}}}"#).expect("write config");
+
+    let output = command()
+        .arg("--format")
+        .arg("json")
+        .arg("--no-discover")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("valid JSON");
+}
