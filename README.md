@@ -44,7 +44,8 @@ cargo install --path . --locked
 
 Tagged releases also provide prebuilt archives for Linux x86-64, macOS Apple
 Silicon and x86-64, and Windows x86-64. Each archive has a matching SHA-256
-checksum and a GitHub artifact attestation on the
+checksum. Releases also include a CycloneDX 1.5 dependency SBOM, with build
+provenance and SBOM attestations on the
 [Releases page](https://github.com/Tinkora/mcp_doctor/releases).
 
 ## Quick start

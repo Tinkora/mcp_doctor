@@ -18,3 +18,5 @@ No changes yet.
 - Terminal-safe human output and loss-tolerant JSON path serialization.
 - Tests proving configured environment values and placeholder tokens are not
   emitted and commands are never executed.
+- Four-platform release archives with SHA-256 checksums, a CycloneDX 1.5 SBOM,
+  build provenance, and SBOM attestations.

@@ -33,9 +33,9 @@ cargo install --path . --locked
 ```
 
 带 tag 的 Release 还会提供 Linux x86-64、macOS Apple Silicon、macOS x86-64
-和 Windows x86-64 预编译归档。每个归档都附带对应的 SHA-256 checksum 和 GitHub
-artifact attestation，可从 [Releases 页面](https://github.com/Tinkora/mcp_doctor/releases)
-下载。
+和 Windows x86-64 预编译归档。每个归档都附带对应的 SHA-256 checksum。Release
+还包含 CycloneDX 1.5 依赖 SBOM，以及构建来源和 SBOM attestation，可从
+[Releases 页面](https://github.com/Tinkora/mcp_doctor/releases)下载。
 
 ## 快速开始
 

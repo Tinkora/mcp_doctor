@@ -166,9 +166,76 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  sbom:
+    name: Generate CycloneDX SBOM
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install SBOM tooling
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.85.0 --profile minimal --no-self-update
+          cargo +1.85.0 install cargo-cyclonedx --version 0.5.9 --locked
+
+      - name: Generate and verify SBOM
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          cargo +1.85.0 --locked cyclonedx \
+            --format json \
+            --describe crate \
+            --target all \
+            --spec-version 1.5
+          mkdir -p dist
+          old_ref="$(jq -er '.metadata.component["bom-ref"]' mcp-doctor.cdx.json)"
+          normalized_ref="pkg:cargo/mcp-doctor@${RELEASE_TAG#v}"
+          jq --arg old_ref "${old_ref}" --arg normalized_ref "${normalized_ref}" '
+            .metadata.component["bom-ref"] = $normalized_ref
+            | .metadata.component.purl = $normalized_ref
+            | .metadata.component.components |= map(
+                (.purl | capture("#(?<path>.+)$").path) as $path
+                | .["bom-ref"] = ($normalized_ref + "#" + $path)
+                | .purl = ($normalized_ref + "#" + $path)
+              )
+            | .dependencies |= map(
+                if .ref == $old_ref then .ref = $normalized_ref else . end
+              )
+          ' mcp-doctor.cdx.json > "dist/mcp-doctor-${RELEASE_TAG}.cdx.json"
+          jq -e --arg version "${RELEASE_TAG#v}" '
+            .bomFormat == "CycloneDX"
+            and .specVersion == "1.5"
+            and .metadata.component.name == "mcp-doctor"
+            and .metadata.component.version == $version
+            and (.components | length > 0)
+            and (.dependencies | length > 0)
+          ' "dist/mcp-doctor-${RELEASE_TAG}.cdx.json" >/dev/null
+          if grep -Eq 'path\+file:|download_url=file:' "dist/mcp-doctor-${RELEASE_TAG}.cdx.json"; then
+            echo "SBOM contains a checkout-local package reference" >&2
+            exit 1
+          fi
+          (cd dist && sha256sum "mcp-doctor-${RELEASE_TAG}.cdx.json" \
+            > "mcp-doctor-${RELEASE_TAG}.cdx.json.sha256")
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mcp-doctor-sbom
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
   verify:
     name: Verify release assets
-    needs: build
+    needs: [build, sbom]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -181,14 +248,14 @@ jobs:
       - name: Verify asset set and checksums
         run: |
           set -euo pipefail
-          [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" == "8" ]] || {
-            echo "expected four archives and four checksums" >&2
+          [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" == "10" ]] || {
+            echo "expected four archives, four archive checksums, one SBOM, and one SBOM checksum" >&2
             exit 1
           }
           (cd release-assets && sha256sum --check --strict -- ./*.sha256)
 
   attest:
-    name: Attest release archives
+    name: Attest release archives and SBOM
     needs: verify
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
@@ -210,6 +277,14 @@ jobs:
           subject-path: |
             release-assets/*.tar.gz
             release-assets/*.zip
+
+      - name: Attest release SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3
+        with:
+          subject-path: |
+            release-assets/*.tar.gz
+            release-assets/*.zip
+          sbom-path: release-assets/mcp-doctor-${{ env.RELEASE_TAG }}.cdx.json
 
   release:
     name: Publish GitHub Release
@@ -245,10 +320,28 @@ jobs:
           }
           (cd release-assets && sha256sum --check --strict -- ./*.sha256)
           mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | LC_ALL=C sort -z)
-          [[ "${#assets[@]}" == "8" ]] || {
+          [[ "${#assets[@]}" == "10" ]] || {
             echo "unexpected release asset count" >&2
             exit 1
           }
-          gh release create "${RELEASE_TAG}" "${assets[@]}" \
-            --draft --generate-notes --title "MCP Doctor ${RELEASE_TAG}" --verify-tag
-          gh release edit "${RELEASE_TAG}" --draft=false
+          release_id="$(gh api \
+            --method POST \
+            "repos/${GH_REPO}/releases" \
+            -f tag_name="${RELEASE_TAG}" \
+            -f target_commitish="${GITHUB_SHA}" \
+            -f name="MCP Doctor ${RELEASE_TAG}" \
+            -F draft=true \
+            -F prerelease=false \
+            -F generate_release_notes=true \
+            --jq '.id')"
+          release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
+          test "$(jq -r '.tag_name' <<< "${release_json}")" = "${RELEASE_TAG}"
+          test "$(jq -r '.draft' <<< "${release_json}")" = true
+          gh release upload "${RELEASE_TAG}" "${assets[@]}"
+          release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
+          test "$(jq -r '.assets | length' <<< "${release_json}")" = 10
+          gh api \
+            --method PATCH \
+            "repos/${GH_REPO}/releases/${release_id}" \
+            -F draft=false \
+            --jq '.draft' | grep -qx false

@@ -48,6 +48,9 @@ jobs:
           RUSTUP_TOOLCHAIN: 1.85.0
         run: cargo build --release --locked
 
+      - name: Test release workflow contract
+        run: ruby scripts/test_release_workflow.rb
+
       - name: Install supply-chain tools
         run: |
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
