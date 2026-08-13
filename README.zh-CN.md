@@ -2,7 +2,17 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![在 Ko-fi 上支持 Tinkora](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/tinkora)
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <a href="https://ko-fi.com/tinkora" target="_blank" rel="noopener noreferrer">
+    <img
+      src="https://ko-fi.com/img/githubbutton_sm.svg"
+      alt="在 Ko-fi 上支持 Tinkora"
+      width="520"
+    >
+  </a>
+</p>
+<!-- markdownlint-enable MD033 -->
 
 `mcp-doctor` 是一个本地、静态的 stdio MCP server 配置预检器。它帮助 AI
 Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `npx` 或 Node、
