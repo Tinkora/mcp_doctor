@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+[![Support Tinkora on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/tinkora)
+
 `mcp-doctor` is a local, static preflight checker for stdio MCP server
 configuration. It helps an agent developer find the launch failures that often
 happen before MCP Inspector or a client can start a server: a missing `npx` or
