@@ -29,7 +29,8 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 [#447](https://github.com/modelcontextprotocol/servers/issues/447)，Cline 的
 [#1948](https://github.com/cline/cline/issues/1948)、[#902](https://github.com/cline/cline/issues/902)，
 Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
-[#7509](https://github.com/continuedev/continue/issues/7509)，以及 GitHub MCP server 的
+[#7509](https://github.com/continuedev/continue/issues/7509)，以及 GitHub MCP
+server 的
 [#1396](https://github.com/github/github-mcp-server/issues/1396)。Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -87,11 +88,13 @@ echo "$?" # 0 = 无错误，1 = 检查错误，2 = 输入错误
 
 ## 支持的配置
 
-MVP 只读取 JSON：
+MVP 读取 JSON 和 JSONC（允许注释与尾逗号）：
 
 - 顶层为 `mcpServers` map（Claude Desktop、Cline 风格）；
 - 顶层为 `servers` map（VS Code 风格）；
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
+- VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
+  也不会被展开。
 
 带 `url`、HTTP、SSE 或其他非 stdio `type` 的远程条目会报告不支持，不会发起连接。
 在有独立需求和兼容性证据前，YAML、TOML、MCP catalog、协议握手和 server 执行均不在范围内。
@@ -100,9 +103,9 @@ MVP 只读取 JSON：
 
 MCP Doctor 默认只读。它读取指定 JSON 和文件元数据，并读取进程 `PATH` 来检查裸命令
 可发现性。它不会启动进程、发起网络请求、从进程环境中读取占位符对应的值，也不会在
-报告中包含配置的环境变量值。占位符诊断使用通用消息，不回显占位符 token；环境变量
-key 和 server 名称可能作为位置出现，但 human 输出会转义终端控制字符。分享配置前请先
-移除 secret。
+报告中包含配置的环境变量值。占位符诊断使用通用消息，不回显占位符 token；VS Code 的
+`${input:name}` 引用因其值由客户端提供而豁免，不会读取进程环境。环境变量 key 和 server
+名称可能作为位置出现，但 human 输出会转义终端控制字符。分享配置前请先移除 secret。
 
 ## 与 MCP Inspector 的边界
 
@@ -119,12 +122,13 @@ cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 ```
 
-测试覆盖支持的配置封装、当前进程 PATH 与 `PATHEXT`、确定和客户端相关的路径诊断、
-占位符脱敏、终端安全输出、不支持的传输、坏输入、JSON 路径编码、CLI 退出码和
-“不执行命令”边界。
+测试覆盖支持的配置封装、JSONC 注释和尾逗号、当前进程 PATH 与 `PATHEXT`、确定和客户端
+相关的路径诊断、占位符脱敏、VS Code 输入引用、终端安全输出、不支持的传输、坏输入、
+JSON 路径编码、CLI 退出码和“不执行命令”边界。
 
 请阅读[产品规格](docs/PRODUCT_SPEC.zh-CN.md)了解证据门槛、发现路径和停止条件；修改前请阅读
-[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)、[SECURITY.zh-CN.md](SECURITY.zh-CN.md) 和
+[CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)、
+[SECURITY.zh-CN.md](SECURITY.zh-CN.md) 和
 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证

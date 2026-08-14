@@ -78,12 +78,8 @@ pub enum DoctorError {
         #[source]
         source: std::io::Error,
     },
-    #[error("invalid JSON in {path}: {source}")]
-    InvalidJson {
-        path: PathBuf,
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("invalid JSON or JSONC in {path}: {message}")]
+    InvalidJson { path: PathBuf, message: String },
     #[error("unsupported MCP configuration in {path}: {message}")]
     UnsupportedConfig { path: PathBuf, message: String },
     #[error("invalid server entry {server} in {path}: {message}")]
@@ -162,12 +158,84 @@ pub fn inspect_file(path: &Path, context: &CheckContext) -> Result<FileReport, D
         path: path.to_path_buf(),
         source,
     })?;
-    let document: Value =
-        serde_json::from_slice(&bytes).map_err(|source| DoctorError::InvalidJson {
+    let text = String::from_utf8(bytes).map_err(|source| DoctorError::InvalidJson {
+        path: path.to_path_buf(),
+        message: source.to_string(),
+    })?;
+    if contains_unsupported_single_quote(&text) {
+        return Err(DoctorError::InvalidJson {
             path: path.to_path_buf(),
-            source,
+            message: "single-quoted strings are not valid JSONC".to_string(),
+        });
+    }
+    let document: Value = jsonc_parser::parse_to_serde_value(&text, &jsonc_parse_options())
+        .map_err(|source| DoctorError::InvalidJson {
+            path: path.to_path_buf(),
+            message: source.to_string(),
+        })?
+        .ok_or_else(|| DoctorError::InvalidJson {
+            path: path.to_path_buf(),
+            message: "configuration is empty".to_string(),
         })?;
     inspect_document(path, &document, context)
+}
+
+fn jsonc_parse_options() -> jsonc_parser::ParseOptions {
+    jsonc_parser::ParseOptions {
+        allow_comments: true,
+        allow_loose_object_property_names: false,
+        allow_trailing_commas: true,
+    }
+}
+
+fn contains_unsupported_single_quote(text: &str) -> bool {
+    let mut characters = text.chars().peekable();
+    let mut in_double_quoted_string = false;
+    let mut escaped = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    while let Some(character) = characters.next() {
+        if in_line_comment {
+            if character == '\n' || character == '\r' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+        if in_block_comment {
+            if character == '*' && characters.peek() == Some(&'/') {
+                characters.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if in_double_quoted_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_double_quoted_string = false;
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_double_quoted_string = true,
+            '/' if characters.peek() == Some(&'/') => {
+                characters.next();
+                in_line_comment = true;
+            }
+            '/' if characters.peek() == Some(&'*') => {
+                characters.next();
+                in_block_comment = true;
+            }
+            '\'' => return true,
+            _ => {}
+        }
+    }
+
+    false
 }
 
 fn inspect_document(
@@ -603,14 +671,16 @@ pub fn inspect_value(
     server: Option<&str>,
     _context: &CheckContext,
 ) -> Option<Finding> {
-    placeholder_name(value).map(|_| Finding {
-        code: FindingCode::Placeholder,
-        severity: Severity::Warning,
-        server: server.map(str::to_owned),
-        location: location.to_string(),
-        message: "unresolved environment placeholder; the configured value was not emitted"
-            .to_string(),
-    })
+    placeholder_name(value)
+        .filter(|name| !name.starts_with("input:"))
+        .map(|_| Finding {
+            code: FindingCode::Placeholder,
+            severity: Severity::Warning,
+            server: server.map(str::to_owned),
+            location: location.to_string(),
+            message: "unresolved environment placeholder; the configured value was not emitted"
+                .to_string(),
+        })
 }
 
 /// Return existing conventional config paths for the current workspace and user.
@@ -893,6 +963,16 @@ mod tests {
     }
 
     #[test]
+    fn accepts_vscode_input_references_without_environment_warnings() {
+        let context = CheckContext::with_path(Vec::<PathBuf>::new());
+
+        assert!(inspect_value("${input:api-key}", "args[0]", None, &context).is_none());
+        assert!(
+            inspect_value("prefix-${input:api-key}-suffix", "args[0]", None, &context,).is_none()
+        );
+    }
+
+    #[test]
     fn does_not_treat_percent_encoded_text_as_an_environment_placeholder() {
         let context = CheckContext::with_path(Vec::<PathBuf>::new());
 
@@ -906,6 +986,64 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let config = dir.path().join("mcp.json");
         fs::write(&config, "{broken").expect("write config");
+
+        let error =
+            inspect_file(&config, &CheckContext::with_path(Vec::new())).expect_err("must fail");
+
+        assert!(matches!(error, DoctorError::InvalidJson { .. }));
+    }
+
+    #[test]
+    fn accepts_jsonc_comments_and_trailing_commas() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{
+                /* Keep the user's server enabled for local integration tests. */
+                "servers": {
+                    "demo": {
+                        "type": "stdio",
+                        "command": "node",
+                        "args": ["server's.js",], // Entry point.
+                    },
+                },
+            }"#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::with_path(Vec::new()))
+            .expect("JSONC config should parse");
+
+        assert_eq!(report.servers.len(), 1);
+        assert_eq!(report.servers[0].name, "demo");
+    }
+
+    #[test]
+    fn rejects_json5_only_syntax_outside_jsonc_boundary() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{
+                servers: {
+                    demo: { command: 'node' },
+                },
+            }"#,
+        )
+        .expect("write config");
+
+        let error =
+            inspect_file(&config, &CheckContext::with_path(Vec::new())).expect_err("must fail");
+
+        assert!(matches!(error, DoctorError::InvalidJson { .. }));
+    }
+
+    #[test]
+    fn rejects_single_quoted_json5_strings() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(&config, r#"{"servers":{"demo":{"command":'node'}}}"#).expect("write config");
 
         let error =
             inspect_file(&config, &CheckContext::with_path(Vec::new())).expect_err("must fail");
