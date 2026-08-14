@@ -9,7 +9,9 @@ workflow = File.read(
 required_fragments = [
   "cargo-cyclonedx --version 0.5.9 --locked",
   "mcp-doctor-${RELEASE_TAG}.cdx.json",
-  "actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34",
+  "actions/attest@",
+  "subject-path:",
+  "sbom-path:",
   'release_id="$(gh api',
   'repos/${GH_REPO}/releases/${release_id}',
   "-F draft=false"
@@ -17,6 +19,14 @@ required_fragments = [
 
 required_fragments.each do |fragment|
   abort("release workflow is missing #{fragment.inspect}") unless workflow.include?(fragment)
+end
+
+action_references = workflow.scan(/^\s*uses:\s*([^@\s]+)@([^\s#]+)/).map do |name, revision|
+  [name, revision]
+end
+unpinned_actions = action_references.reject { |_name, revision| revision.match?(/\A[0-9a-f]{40}\z/) }
+unless unpinned_actions.empty?
+  abort("release workflow has unpinned actions: #{unpinned_actions.map(&:first).join(', ')}")
 end
 
 abort("draft releases must be published by release id") if workflow.include?("gh release edit")
