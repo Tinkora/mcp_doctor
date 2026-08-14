@@ -15,17 +15,22 @@ Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
 [#1396](https://github.com/github/github-mcp-server/issues/1396)，以及相关
 Stack Overflow 问题都反复出现这些故障。
 
+配置解析本身也是反复出现的兼容性边界。GitHub Copilot CLI 的
+[#4323](https://github.com/github/copilot-cli/issues/4323) 报告指出，仓库级
+`.mcp.json` 中的注释会被严格 JSON 解析器判为无效，导致整个工作区的 MCP server
+都被跳过。VS Code 的 MCP 配置本身按 JSONC 设计，允许注释和尾逗号。
+
 ## 最小可用结果
 
-给定 JSON 配置或少量约定的本地配置路径，`mcp-doctor` 静态报告每个本地
+给定 JSON/JSONC 配置或少量约定的本地配置路径，`mcp-doctor` 静态报告每个本地
 `stdio` server 是否具备启动前提。它检查命令可发现性、显式命令路径、工作目录
 和未解析占位符，不执行命令，也不从进程环境读取占位符对应的值。人类输出适合终端，
 JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
 
 ## 支持边界
 
-- 顶层为 `mcpServers` map 的 JSON（Claude Desktop、Cline 风格）。
-- 顶层为 `servers` map 的 JSON（VS Code 风格，条目可带 `type: "stdio"`）。
+- 顶层为 `mcpServers` map 的 JSON/JSONC（Claude Desktop、Cline 风格）。
+- 顶层为 `servers` map 的 JSON/JSONC（VS Code 风格，条目可带 `type: "stdio"`）。
 - server 字段：`command`、`args`，可选 `cwd` 和字符串 `env`。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
   不支持传输诊断。
@@ -44,7 +49,7 @@ JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
   提供确定基准时才继续检查相对命令；其他相对命令和工作目录只报告客户端上下文
   warning，避免给出猜测性的错误。
 - 未解析的 `${VAR}`、`$VAR`、`%VAR%`、`{{VAR}}` 占位符会被报告，但不会回显 token
-  或配置值。
+  或配置值。VS Code 的 `${input:name}` 引用由客户端提供，不报告也不展开。
 - 诊断位置可以出现环境变量 key。配置值只在内存中用于空值和占位符静态检查，不做
   插值、不用于命令查找，也不输出。
 - 默认命令只读文件和元数据；本版本没有 `--run`，也不会隐式启动进程。

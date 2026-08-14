@@ -20,9 +20,15 @@ and related Stack Overflow reports ([spawn npx](https://stackoverflow.com/questi
 [spawn npx/einval](https://stackoverflow.com/questions/79586881/spawn-npx-enoent-or-spawn-einval-when-configuring-mcp-server-with-cline-exte),
 [VS Code WSL startup](https://stackoverflow.com/questions/79706687/unable-to-start-mcp-servers-in-vs-code-in-wsl)).
 
+Configuration parsing is also a recurring compatibility boundary. GitHub
+Copilot CLI issue [#4323](https://github.com/github/copilot-cli/issues/4323)
+reports that comments in a repository `.mcp.json` cause every workspace server
+to be skipped by a strict JSON parser. VS Code MCP configuration uses JSONC by
+design, including comments and trailing commas.
+
 ## Smallest useful outcome
 
-Given an explicit JSON configuration or a small set of conventional local
+Given an explicit JSON or JSONC configuration or a small set of conventional local
 configuration paths, `mcp-doctor` reports whether each local `stdio` server is
 statically ready to launch. It checks command discoverability, explicit command
 paths, working directories, and unresolved placeholders without executing a
@@ -32,8 +38,9 @@ for CI wrappers and never includes configured environment values.
 
 ## Supported input boundary
 
-- JSON files with a top-level `mcpServers` map (Claude Desktop, Cline-style).
-- JSON files with a top-level `servers` map (VS Code-style entries with
+- JSON or JSONC files with a top-level `mcpServers` map (Claude Desktop,
+  Cline-style).
+- JSON or JSONC files with a top-level `servers` map (VS Code-style entries with
   `type: "stdio"`).
 - Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
@@ -58,7 +65,8 @@ locations for Claude Desktop, Cline, and Cursor on the current platform.
   working-directory paths receive a client-context warning rather than a
   speculative error.
 - Unresolved `${VAR}`, `$VAR`, `%VAR%`, or `{{VAR}}` placeholders are reported
-  without echoing the token or configured value.
+  without echoing the token or configured value. VS Code `${input:name}`
+  references are client-provided inputs and are not reported or expanded.
 - Configured environment *keys* may appear in diagnostic locations. Values are
   parsed only for static empty-value and placeholder checks; they are not
   interpolated, used for command lookup, or emitted.

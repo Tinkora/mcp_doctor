@@ -102,12 +102,14 @@ Cursor, and VS Code resolve every relative path the same way.
 
 ## Supported configuration
 
-The MVP reads JSON only:
+The MVP reads JSON and JSONC (JSON with comments and trailing commas):
 
 - a top-level `mcpServers` map (Claude Desktop and Cline-style files);
 - a top-level `servers` map (VS Code-style entries);
 - stdio fields `command`, optional string-array `args`, optional string `cwd`,
   and optional string-map `env`.
+- VS Code `${input:name}` references are client-provided inputs, not unresolved
+  process-environment placeholders. They are never expanded.
 
 Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are reported as
 unsupported and are not contacted. YAML, TOML, MCP catalog files, protocol
@@ -121,9 +123,10 @@ metadata, and reads the process `PATH` only to test bare command discoverability
 It does not spawn a process, perform a network request, retrieve a matching
 value from the process environment, or include configured environment values in
 its reports. Placeholder diagnostics are generic and do not echo the placeholder
-token. Environment keys and server names can appear as locations, while terminal
-control characters in human output are escaped. Remove secrets before sharing a
-config file.
+token. VS Code `${input:name}` references are exempt because their values are
+provided by the client, not read from the process environment. Environment keys
+and server names can appear as locations, while terminal control characters in
+human output are escaped. Remove secrets before sharing a config file.
 
 ## MCP Inspector boundary
 
@@ -143,10 +146,11 @@ cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 ```
 
-The test suite covers supported envelopes, current-process PATH and `PATHEXT`,
-deterministic and client-dependent path diagnostics, placeholder redaction,
-terminal-safe output, unsupported transports, malformed input, JSON path
-encoding, CLI exit codes, and the no-execution boundary.
+The test suite covers supported envelopes, JSONC comments and trailing commas,
+current-process PATH and `PATHEXT`, deterministic and client-dependent path
+diagnostics, placeholder redaction, VS Code input references, terminal-safe
+output, unsupported transports, malformed input, JSON path encoding, CLI exit
+codes, and the no-execution boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),
