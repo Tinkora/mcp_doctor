@@ -4,13 +4,18 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
-### Changed
+## [0.1.1] - 2026-08-15
+
+### Added
 
 - Accept JSONC comments and trailing commas used by VS Code MCP
   configurations, while keeping JSON5-only syntax outside the supported
   boundary.
 - Treat VS Code `${input:name}` references as client-provided inputs instead of
   unresolved process-environment placeholders.
+
+### Changed
+
 - Migrated SBOM attestations from the deprecated `actions/attest-sbom`
   wrapper to `actions/attest`.
 - Made the release workflow contract verify full commit-SHA action pins
