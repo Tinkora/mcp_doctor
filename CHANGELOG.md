@@ -4,7 +4,12 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- Migrated SBOM attestations from the deprecated `actions/attest-sbom`
+  wrapper to `actions/attest`.
+- Made the release workflow contract verify full commit-SHA action pins
+  without coupling dependency updates to one obsolete action revision.
 
 ## [0.1.0] - 2026-08-11
 
