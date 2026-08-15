@@ -42,17 +42,30 @@ defines that layout. Claude Code [#54803](https://github.com/anthropics/claude-c
 [#58919](https://github.com/anthropics/claude-code/issues/58919) show recurring
 user-scope location, invalid-entry, and nested-map failures around that file.
 
+Codex stores user MCP servers in `~/.codex/config.toml` and project-scoped
+servers in `.codex/config.toml`, as documented by the official
+[Codex MCP guide](https://developers.openai.com/codex/mcp/) and
+[configuration reference](https://developers.openai.com/codex/config-reference/).
+Codex issues [#37616](https://github.com/openai/codex/issues/37616) and
+[#13464](https://github.com/openai/codex/issues/13464) show invalid escapes and
+duplicate MCP tables making the app unusable, while
+[#13025](https://github.com/openai/codex/issues/13025),
+[#26011](https://github.com/openai/codex/issues/26011), and
+[#33104](https://github.com/openai/codex/issues/33104) show project-scope,
+stale-path, and command-discovery failures.
+
 ## Smallest useful outcome
 
-Given an explicit JSON or JSONC configuration or a small set of conventional local
-configuration paths, `mcp-doctor` reports whether each local `stdio` server is
-statically ready to launch. It checks command discoverability, explicit command
-paths, working directories, and unresolved placeholders without executing a
-command or retrieving matching values from the process environment. When more
-than one file is inspected, it also reports exact and case-only stdio server
-name conflicts without selecting a client-specific winner. Human
-output is optimized for a developer at a terminal; JSON output is stable enough
-for CI wrappers and never includes configured environment values.
+Given an explicit JSON, JSONC, or Codex TOML configuration or a small set of
+conventional local configuration paths, `mcp-doctor` reports whether each local
+`stdio` server is statically ready to launch. It checks command discoverability,
+explicit command paths, working directories, and unresolved placeholders
+without executing a command or retrieving matching values from the process
+environment. When more than one file is inspected, it also reports exact and
+case-only stdio server name conflicts without selecting a client-specific
+winner. Human output is optimized for a developer at a terminal; JSON output
+is stable enough for CI wrappers and never includes configured environment
+values.
 
 ## Supported input boundary
 
@@ -66,19 +79,28 @@ for CI wrappers and never includes configured environment values.
 - Claude Code's `~/.claude.json`, including top-level user `mcpServers` and the
   `projects[workspace].mcpServers` map for the current workspace. Other project
   entries are not inspected.
+- Codex `config.toml` files with a top-level `mcp_servers` table. User and
+  current-workspace files are discovered at `~/.codex/config.toml` and
+  `.codex/config.toml`; Codex itself loads project files only for trusted
+  projects.
 - Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
+- Codex `enabled = false` entries are skipped. `env_vars` declarations are
+  accepted without reading their named values from the process environment.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
   inspected; they receive an explicit unsupported-transport diagnostic.
-- YAML, TOML, catalog files, protocol handshakes, and remote transports are
+- Plugin-provided Codex MCP servers are ignored because their launch command is
+  not present in top-level user configuration.
+- YAML, catalog files, protocol handshakes, and remote transports are
   intentionally out of scope until independent compatibility evidence exists.
 
 Automatic discovery is intentionally conservative: the current workspace
-`.devcontainer/devcontainer.json`, `.vscode/mcp.json`, `.mcp.json`,
-`.github/mcp.json`, `.github/mcp-config.json`, and `.cursor/mcp.json`, plus known
-user config locations for Claude Code, Claude Desktop, Cline, Cursor, VS Code,
-and GitHub Copilot CLI on the current platform. Claude Code discovery includes
-`~/.claude.json`; only its top-level user scope and current-workspace local scope
-are selected. The Copilot paths are grounded in
+`.codex/config.toml`, `.devcontainer/devcontainer.json`, `.vscode/mcp.json`,
+`.mcp.json`, `.github/mcp.json`, `.github/mcp-config.json`, and
+`.cursor/mcp.json`, plus known user config locations for Codex, Claude Code,
+Claude Desktop, Cline, Cursor, VS Code, and GitHub Copilot CLI on the current
+platform. Codex discovery includes `~/.codex/config.toml`. Claude Code
+discovery includes `~/.claude.json`; only its top-level user scope and
+current-workspace local scope are selected. The Copilot paths are grounded in
 repository-scoped configuration reports in
 [#3380](https://github.com/github/copilot-cli/issues/3380) and
 [#4429](https://github.com/github/copilot-cli/issues/4429).
@@ -101,6 +123,9 @@ repository-scoped configuration reports in
 - Configured environment *keys* may appear in diagnostic locations. Values are
   parsed only for static empty-value and placeholder checks; they are not
   interpolated, used for command lookup, or emitted.
+- Codex variables named by `env_vars` are not read from the process environment
+  and are not included in findings. Disabled Codex entries produce no checks or
+  cross-file name-conflict warnings.
 - Claude Code project entries outside the current workspace are ignored even
   when they coexist with inspected user-scope servers in `~/.claude.json`.
 - Exact and case-only duplicate stdio server names across inspected entries
@@ -137,8 +162,8 @@ claim protocol compatibility or server correctness.
 ## Success and stop conditions
 
 The MVP is successful when a user can identify a missing `npx`/Node path, bad
-working directory, unresolved placeholder, or cross-file server name conflict
-without exposing a secret or running a server. Stop expanding the parser when
-a format lacks independent compatibility evidence; validate demand through
-concrete issue or discussion reports before adding another client format or a
-process execution mode.
+working directory, malformed Codex TOML, unresolved placeholder, or cross-file
+server name conflict without exposing a secret or running a server. Stop
+expanding the parser when a format lacks independent compatibility evidence;
+validate demand through concrete issue or discussion reports before adding
+another client format or a process execution mode.

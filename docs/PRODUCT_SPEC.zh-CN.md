@@ -36,13 +36,24 @@ server 嵌套在当前 project 路径下；该结构由其
 [#58919](https://github.com/anthropics/claude-code/issues/58919) 显示该文件反复出现
 user scope 位置、无效条目和嵌套 map 故障。
 
+Codex 按[官方 MCP 指南](https://developers.openai.com/codex/mcp/)和
+[配置参考](https://developers.openai.com/codex/config-reference/)把用户级 MCP
+server 存在 `~/.codex/config.toml`，把项目级 server 存在 `.codex/config.toml`。
+Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
+[#13464](https://github.com/openai/codex/issues/13464) 显示非法转义与重复 MCP table
+会导致应用无法使用；[#13025](https://github.com/openai/codex/issues/13025)、
+[#26011](https://github.com/openai/codex/issues/26011) 和
+[#33104](https://github.com/openai/codex/issues/33104) 则显示项目 scope、过期路径和
+命令不可发现问题。
+
 ## 最小可用结果
 
-给定 JSON/JSONC 配置或少量约定的本地配置路径，`mcp-doctor` 静态报告每个本地
-`stdio` server 是否具备启动前提。它检查命令可发现性、显式命令路径、工作目录
-和未解析占位符；同时检查多个文件时，还会报告完全同名或仅大小写不同的 stdio
-server，但不会替某个客户端选择胜出定义。它不执行命令，也不从进程环境读取占位符对应的值。人类输出适合终端，
-JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
+给定 JSON、JSONC、Codex TOML 配置或少量约定的本地配置路径，`mcp-doctor`
+静态报告每个本地 `stdio` server 是否具备启动前提。它检查命令可发现性、显式命令
+路径、工作目录和未解析占位符；同时检查多个文件时，还会报告完全同名或仅大小写
+不同的 stdio server，但不会替某个客户端选择胜出定义。它不执行命令，也不从进程
+环境读取占位符对应的值。人类输出适合终端，JSON 输出可供 CI 包装使用，且不会包含
+配置的环境变量值。
 
 ## 支持边界
 
@@ -53,15 +64,22 @@ JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
   [VS Code 官方文档](https://code.visualstudio.com/docs/agent-customization/mcp-servers)。
 - Claude Code 的 `~/.claude.json`，包括顶层 user `mcpServers` 和当前工作区对应的
   `projects[workspace].mcpServers`；不检查其他 project 条目。
+- 顶层含 `mcp_servers` table 的 Codex `config.toml`。自动发现用户级
+  `~/.codex/config.toml` 和当前工作区 `.codex/config.toml`；Codex 本身只在项目
+  受信任时加载项目级配置。
 - server 字段：`command`、`args`，可选 `cwd` 和字符串 `env`。
+- 跳过 `enabled = false` 的 Codex 条目；接受 `env_vars` 声明，但不从进程环境读取
+  其中命名的值。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
   不支持传输诊断。
-- YAML、TOML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
+- 忽略 plugin 提供的 Codex MCP server，因为顶层用户配置中没有它们的启动命令。
+- YAML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
 
-自动发现保持保守：当前工作区的 `.devcontainer/devcontainer.json`、
-`.vscode/mcp.json`、`.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json`、
-`.cursor/mcp.json`，以及当前平台上 Claude Code、Claude Desktop、Cline、Cursor、
-VS Code 和 GitHub Copilot CLI 的已知用户配置路径。Claude Code 发现包括
+自动发现保持保守：当前工作区的 `.codex/config.toml`、
+`.devcontainer/devcontainer.json`、`.vscode/mcp.json`、`.mcp.json`、
+`.github/mcp.json`、`.github/mcp-config.json`、`.cursor/mcp.json`，以及当前平台上
+Codex、Claude Code、Claude Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI
+的已知用户配置路径。Codex 发现包括 `~/.codex/config.toml`。Claude Code 发现包括
 `~/.claude.json`，但只选择顶层 user scope 和当前工作区 local scope。
 Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
 和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。
@@ -79,6 +97,8 @@ Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/c
   或配置值。VS Code 的 `${input:name}` 引用由客户端提供，不报告也不展开。
 - 诊断位置可以出现环境变量 key。配置值只在内存中用于空值和占位符静态检查，不做
   插值、不用于命令查找，也不输出。
+- 不从进程环境读取 Codex `env_vars` 中命名的值，也不在 finding 中包含这些值。
+  禁用的 Codex 条目不会产生检查或跨文件名称冲突 warning。
 - 即使 `~/.claude.json` 同时包含已检查的 user server，也会忽略当前工作区之外的
   Claude Code project 条目。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会收到
@@ -107,6 +127,7 @@ stdio 和远程传输。MCP Doctor 是协议启动前的预检层，专门处理
 
 ## 成功与停止条件
 
-当用户无需暴露 secret 或运行 server，就能从配置中定位缺失的 `npx`/Node 路径、错误
-工作目录、未解析占位符或跨文件 server 名称冲突时，MVP 即成功。没有独立兼容性证据时停止扩展解析器；新增
-客户端格式或进程执行模式前，先用具体 issue/discussion 反馈验证需求。
+当用户无需暴露 secret 或运行 server，就能从配置中定位缺失的 `npx`/Node 路径、
+错误工作目录、Codex TOML 语法错误、未解析占位符或跨文件 server 名称冲突时，MVP
+即成功。没有独立兼容性证据时停止扩展解析器；新增客户端格式或进程执行模式前，先用
+具体 issue/discussion 反馈验证需求。

@@ -150,6 +150,51 @@ fn discovery_inspects_claude_code_user_and_current_workspace_scopes() {
 }
 
 #[test]
+fn discovery_inspects_codex_user_and_project_configs_and_reports_conflicts() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let app_data = tempdir().expect("app data");
+    let user_config = home.path().join(".codex/config.toml");
+    let project_config = workspace.path().join(".codex/config.toml");
+    fs::create_dir_all(user_config.parent().expect("user config parent"))
+        .expect("create user config parent");
+    fs::create_dir_all(project_config.parent().expect("project config parent"))
+        .expect("create project config parent");
+    fs::write(
+        &user_config,
+        r#"
+            [mcp_servers.Playwright]
+            command = "missing-user-command"
+            env = { TOKEN = "never-print-this" }
+        "#,
+    )
+    .expect("write user config");
+    fs::write(
+        &project_config,
+        r#"
+            [mcp_servers.playwright]
+            command = "missing-project-command"
+        "#,
+    )
+    .expect("write project config");
+
+    let output = command()
+        .current_dir(workspace.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("APPDATA", app_data.path())
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert_eq!(stdout.matches("server_name_conflict").count(), 2);
+    assert!(stdout.contains("Server: Playwright"));
+    assert!(stdout.contains("Server: playwright"));
+    assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
 fn reports_conflicting_server_names_across_explicit_files() {
     let dir = tempdir().expect("tempdir");
     let user_config = dir.path().join("user-mcp.json");
