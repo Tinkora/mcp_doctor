@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use thiserror::Error;
 
 /// A restricted environment view used only to resolve command search paths.
@@ -284,22 +284,7 @@ fn inspect_document(
             path: path.to_path_buf(),
             message: "the top-level JSON value must be an object".to_string(),
         })?;
-    let (key, servers) = if let Some(value) = root.get("mcpServers") {
-        ("mcpServers", value)
-    } else if let Some(value) = root.get("servers") {
-        ("servers", value)
-    } else {
-        return Err(DoctorError::UnsupportedConfig {
-            path: path.to_path_buf(),
-            message: "expected a top-level mcpServers or servers object".to_string(),
-        });
-    };
-    let servers = servers
-        .as_object()
-        .ok_or_else(|| DoctorError::UnsupportedConfig {
-            path: path.to_path_buf(),
-            message: format!("{key} must be an object"),
-        })?;
+    let servers = server_map(root, path)?;
 
     let mut report = FileReport {
         path: path.to_path_buf(),
@@ -365,6 +350,76 @@ fn inspect_document(
         .run(&mut report.findings);
     }
     Ok(report)
+}
+
+fn server_map<'a>(
+    root: &'a Map<String, Value>,
+    path: &Path,
+) -> Result<&'a Map<String, Value>, DoctorError> {
+    if let Some(value) = root.get("mcpServers") {
+        return object_map(value, path, "mcpServers");
+    }
+    if let Some(value) = root.get("servers") {
+        return object_map(value, path, "servers");
+    }
+
+    let Some(customizations) = root.get("customizations") else {
+        return Err(DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "expected a top-level mcpServers or servers object, or customizations.vscode.mcp.servers".to_string(),
+        });
+    };
+    let customizations =
+        customizations
+            .as_object()
+            .ok_or_else(|| DoctorError::UnsupportedConfig {
+                path: path.to_path_buf(),
+                message: "customizations must be an object".to_string(),
+            })?;
+    let Some(vscode) = customizations.get("vscode") else {
+        return Err(DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "expected customizations.vscode.mcp.servers object".to_string(),
+        });
+    };
+    let vscode = vscode
+        .as_object()
+        .ok_or_else(|| DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "customizations.vscode must be an object".to_string(),
+        })?;
+    let Some(mcp) = vscode.get("mcp") else {
+        return Err(DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "expected customizations.vscode.mcp.servers object".to_string(),
+        });
+    };
+    let mcp = mcp
+        .as_object()
+        .ok_or_else(|| DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "customizations.vscode.mcp must be an object".to_string(),
+        })?;
+    let Some(servers) = mcp.get("servers") else {
+        return Err(DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "expected customizations.vscode.mcp.servers object".to_string(),
+        });
+    };
+    object_map(servers, path, "customizations.vscode.mcp.servers")
+}
+
+fn object_map<'a>(
+    value: &'a Value,
+    path: &Path,
+    key: &'static str,
+) -> Result<&'a Map<String, Value>, DoctorError> {
+    value
+        .as_object()
+        .ok_or_else(|| DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: format!("{key} must be an object"),
+        })
 }
 
 fn parse_string_array(
@@ -731,6 +786,7 @@ fn discover_paths_from_roots(
     app_data: Option<&Path>,
 ) -> Vec<PathBuf> {
     let mut candidates = vec![
+        workspace.join(".devcontainer/devcontainer.json"),
         workspace.join(".vscode/mcp.json"),
         workspace.join(".mcp.json"),
         workspace.join(".github/mcp.json"),
@@ -813,6 +869,92 @@ mod tests {
         }));
         let serialized = serde_json::to_string(&report).expect("serialize report");
         assert!(!serialized.contains("super-secret"));
+    }
+
+    #[test]
+    fn parses_vscode_devcontainer_servers_without_exposing_env_values() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("devcontainer.json");
+        fs::write(
+            &config,
+            r#"{
+                // VS Code Dev Container MCP configuration
+                "customizations": {
+                    "vscode": {
+                        "mcp": {
+                            "servers": {
+                                "playwright": {
+                                    "command": "missing-playwright",
+                                    "env": {"TOKEN": "super-secret",},
+                                },
+                                "remote": {
+                                    "type": "http",
+                                    "url": "https://example.test/mcp",
+                                },
+                            },
+                        },
+                    },
+                },
+            }"#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::with_path(Vec::<PathBuf>::new()))
+            .expect("inspect config");
+
+        assert_eq!(report.servers.len(), 1);
+        assert_eq!(report.servers[0].name, "playwright");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CommandNotFound)
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::UnsupportedTransport)
+        );
+        let serialized = serde_json::to_string(&report).expect("serialize report");
+        assert!(!serialized.contains("super-secret"));
+    }
+
+    #[test]
+    fn reports_missing_command_in_devcontainer_server() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("devcontainer.json");
+        fs::write(
+            &config,
+            r#"{"customizations":{"vscode":{"mcp":{"servers":{"demo":{"args":[]}}}}}}"#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::with_path(Vec::<PathBuf>::new()))
+            .expect("inspect config");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CommandMissing)
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_devcontainer_server_map_with_stable_error() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("devcontainer.json");
+        fs::write(
+            &config,
+            r#"{"customizations":{"vscode":{"mcp":{"servers":[]}}}}"#,
+        )
+        .expect("write config");
+
+        let error = inspect_file(&config, &CheckContext::default()).expect_err("invalid config");
+        let message = error.to_string();
+        assert!(message.contains("unsupported MCP configuration"));
+        assert!(message.contains("customizations.vscode.mcp.servers must be an object"));
     }
 
     #[test]
@@ -1164,6 +1306,7 @@ mod tests {
         let app_data = tempdir().expect("app data");
 
         for relative in [
+            ".devcontainer/devcontainer.json",
             ".vscode/mcp.json",
             ".mcp.json",
             ".github/mcp.json",
@@ -1187,7 +1330,8 @@ mod tests {
         let paths =
             discover_paths_from_roots(workspace.path(), Some(home.path()), Some(app_data.path()));
 
-        assert_eq!(paths.len(), 8);
+        assert_eq!(paths.len(), 9);
+        assert!(paths.contains(&workspace.path().join(".devcontainer/devcontainer.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp-config.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp.json")));
         assert!(paths.contains(&copilot));

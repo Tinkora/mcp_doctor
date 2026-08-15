@@ -6,6 +6,14 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-15
+
+### Added
+
+- Discover `.devcontainer/devcontainer.json` in the current workspace.
+- Inspect VS Code Dev Container MCP servers under
+  `customizations.vscode.mcp.servers` using the existing static stdio checks.
+
 ## [0.1.3] - 2026-08-15
 
 ### Added

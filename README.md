@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx` or
 Node binary on `PATH`, an invalid working directory, and unresolved environment
 placeholders.
 
-> Status: Alpha (`v0.1.3` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.4` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -74,10 +74,11 @@ mcp-doctor ~/.cursor/mcp.json
 
 With no path, MCP Doctor checks existing conventional files in the current
 workspace and the current user's known Claude Desktop, Cline, Cursor, VS Code,
-and GitHub Copilot CLI paths. Repository discovery includes `.vscode/mcp.json`,
-`.mcp.json`, `.github/mcp.json`, `.github/mcp-config.json`, and
-`.cursor/mcp.json`; user discovery includes Copilot CLI's
-`~/.copilot/mcp-config.json` and the platform's VS Code user `mcp.json`.
+and GitHub Copilot CLI paths. Repository discovery includes
+`.devcontainer/devcontainer.json`, `.vscode/mcp.json`, `.mcp.json`,
+`.github/mcp.json`, `.github/mcp-config.json`, and `.cursor/mcp.json`; user
+discovery includes Copilot CLI's `~/.copilot/mcp-config.json` and the platform's
+VS Code user `mcp.json`.
 
 ```bash
 mcp-doctor
@@ -119,6 +120,9 @@ The MVP reads JSON and JSONC (JSON with comments and trailing commas):
 
 - a top-level `mcpServers` map (Claude Desktop and Cline-style files);
 - a top-level `servers` map (VS Code-style entries);
+- a VS Code Dev Container `customizations.vscode.mcp.servers` map in
+  `.devcontainer/devcontainer.json` (see the
+  [official VS Code MCP documentation](https://code.visualstudio.com/docs/agent-customization/mcp-servers));
 - stdio fields `command`, optional string-array `args`, optional string `cwd`,
   and optional string-map `env`.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved

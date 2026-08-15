@@ -19,7 +19,7 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 工作目录无效、环境变量占位符未解析。这些问题通常发生在 MCP Inspector 或
 客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.3` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.4` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -64,9 +64,10 @@ mcp-doctor ~/.cursor/mcp.json
 
 没有路径时，工具检查当前工作区以及当前用户已存在的 Claude Desktop、Cline、
 Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库级发现包括
-`.vscode/mcp.json`、`.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json`
-和 `.cursor/mcp.json`；用户级发现包括 Copilot CLI 的
-`~/.copilot/mcp-config.json` 以及当前平台的 VS Code 用户级 `mcp.json`。
+`.devcontainer/devcontainer.json`、`.vscode/mcp.json`、`.mcp.json`、
+`.github/mcp.json`、`.github/mcp-config.json` 和 `.cursor/mcp.json`；用户级发现
+包括 Copilot CLI 的 `~/.copilot/mcp-config.json` 以及当前平台的 VS Code 用户级
+`mcp.json`。
 
 ```bash
 mcp-doctor
@@ -103,6 +104,9 @@ MVP 读取 JSON 和 JSONC（允许注释与尾逗号）：
 
 - 顶层为 `mcpServers` map（Claude Desktop、Cline 风格）；
 - 顶层为 `servers` map（VS Code 风格）；
+- `.devcontainer/devcontainer.json` 中的 VS Code Dev Container
+  `customizations.vscode.mcp.servers` map（参见
+  [VS Code 官方 MCP 文档](https://code.visualstudio.com/docs/agent-customization/mcp-servers)）；
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
   也不会被展开。

@@ -52,6 +52,9 @@ for CI wrappers and never includes configured environment values.
   Cline-style).
 - JSON or JSONC files with a top-level `servers` map (VS Code-style entries with
   `type: "stdio"`).
+- JSON or JSONC Dev Container files with a nested
+  `customizations.vscode.mcp.servers` map, as documented by
+  [VS Code](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
 - Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
   inspected; they receive an explicit unsupported-transport diagnostic.
@@ -59,10 +62,11 @@ for CI wrappers and never includes configured environment values.
   intentionally out of scope until independent compatibility evidence exists.
 
 Automatic discovery is intentionally conservative: the current workspace
-`.vscode/mcp.json`, `.mcp.json`, `.github/mcp.json`, `.github/mcp-config.json`,
-and `.cursor/mcp.json`, plus known user config locations for Claude Desktop,
-Cline, Cursor, VS Code, and GitHub Copilot CLI on the current platform. The
-Copilot paths are grounded in repository-scoped configuration reports in
+`.devcontainer/devcontainer.json`, `.vscode/mcp.json`, `.mcp.json`,
+`.github/mcp.json`, `.github/mcp-config.json`, and `.cursor/mcp.json`, plus known
+user config locations for Claude Desktop, Cline, Cursor, VS Code, and GitHub
+Copilot CLI on the current platform. The Copilot paths are grounded in
+repository-scoped configuration reports in
 [#3380](https://github.com/github/copilot-cli/issues/3380) and
 [#4429](https://github.com/github/copilot-cli/issues/4429).
 

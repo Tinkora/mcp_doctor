@@ -40,14 +40,18 @@ JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
 
 - 顶层为 `mcpServers` map 的 JSON/JSONC（Claude Desktop、Cline 风格）。
 - 顶层为 `servers` map 的 JSON/JSONC（VS Code 风格，条目可带 `type: "stdio"`）。
+- JSON/JSONC Dev Container 文件中的嵌套
+  `customizations.vscode.mcp.servers` map，结构依据
+  [VS Code 官方文档](https://code.visualstudio.com/docs/agent-customization/mcp-servers)。
 - server 字段：`command`、`args`，可选 `cwd` 和字符串 `env`。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
   不支持传输诊断。
 - YAML、TOML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
 
-自动发现保持保守：当前工作区的 `.vscode/mcp.json`、`.mcp.json`、
-`.github/mcp.json`、`.github/mcp-config.json`、`.cursor/mcp.json`，以及当前平台上
-Claude Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI 的已知用户配置路径。
+自动发现保持保守：当前工作区的 `.devcontainer/devcontainer.json`、
+`.vscode/mcp.json`、`.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json`、
+`.cursor/mcp.json`，以及当前平台上 Claude Desktop、Cline、Cursor、VS Code 和
+GitHub Copilot CLI 的已知用户配置路径。
 Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
 和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。
 
