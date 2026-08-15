@@ -1047,13 +1047,19 @@ mod tests {
     fn parses_codex_stdio_servers_without_exposing_environment_values() {
         let dir = tempdir().expect("tempdir");
         let config = dir.path().join("config.toml");
+        let missing_cwd = serde_json::to_string(
+            &dir.path()
+                .join("missing-mcp-doctor-directory")
+                .to_string_lossy(),
+        )
+        .expect("encode missing cwd");
         fs::write(
             &config,
             r#"
                 [mcp_servers.demo]
                 command = "missing-codex-command"
                 args = ["--token", "${API_KEY}"]
-                cwd = "/definitely/missing/mcp-doctor-directory"
+                cwd = __MISSING_CWD__
                 env_vars = [
                     "PASSTHROUGH_SECRET",
                     { name = "REMOTE_SECRET", source = "remote" },
@@ -1061,7 +1067,8 @@ mod tests {
 
                 [mcp_servers.demo.env]
                 API_KEY = "super-secret"
-            "#,
+            "#
+            .replace("__MISSING_CWD__", &missing_cwd),
         )
         .expect("write config");
 
