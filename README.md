@@ -146,8 +146,9 @@ TOML:
   [official Codex MCP documentation](https://developers.openai.com/codex/mcp/);
 - stdio fields `command`, optional string-array `args`, optional string `cwd`,
   and optional string-map `env`.
-- Codex `enabled = false` servers are skipped. Names declared by `env_vars` are
-  not looked up in the process environment or emitted.
+- Codex `enabled = false` servers are skipped. `env_vars` entries may be names
+  or `{ name, source = "local" | "remote" }` tables. Their structure is
+  validated, but the named process values are never looked up or emitted.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
   process-environment placeholders. They are never expanded.
 - Exact and case-only duplicate stdio server names across inspected entries are

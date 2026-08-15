@@ -424,6 +424,9 @@ fn inspect_document(
             let args = parse_string_array(server.get("args"), path, name, "args")?;
             let cwd = parse_optional_string(server.get("cwd"), path, name, "cwd")?;
             let env_map = parse_string_map(server.get("env"), path, name)?;
+            if is_toml_config(path) {
+                validate_codex_env_vars(server.get("env_vars"), path, name)?;
+            }
             report.servers.push(ServerReport {
                 name: name.clone(),
                 transport: "stdio",
@@ -618,6 +621,45 @@ fn parse_string_array(
                 })
         })
         .collect()
+}
+
+fn validate_codex_env_vars(
+    value: Option<&Value>,
+    path: &Path,
+    server: &str,
+) -> Result<(), DoctorError> {
+    let Some(value) = value else { return Ok(()) };
+    let array = value.as_array().ok_or_else(|| DoctorError::InvalidServer {
+        path: path.to_path_buf(),
+        server: server.to_string(),
+        message: "env_vars must be an array".to_string(),
+    })?;
+    for (index, item) in array.iter().enumerate() {
+        if item.is_string() {
+            continue;
+        }
+        let table = item.as_object().ok_or_else(|| DoctorError::InvalidServer {
+            path: path.to_path_buf(),
+            server: server.to_string(),
+            message: format!("env_vars[{index}] must be a string or a name/source table"),
+        })?;
+        if !table.get("name").is_some_and(Value::is_string) {
+            return Err(DoctorError::InvalidServer {
+                path: path.to_path_buf(),
+                server: server.to_string(),
+                message: format!("env_vars[{index}].name must be a string"),
+            });
+        }
+        let source = table.get("source").and_then(Value::as_str);
+        if !matches!(source, Some("local" | "remote")) {
+            return Err(DoctorError::InvalidServer {
+                path: path.to_path_buf(),
+                server: server.to_string(),
+                message: format!("env_vars[{index}].source must be local or remote"),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn parse_optional_string(
@@ -1098,6 +1140,44 @@ mod tests {
         assert!(!serialized.contains("super-secret"));
         assert!(!serialized.contains("PASSTHROUGH_SECRET"));
         assert!(!serialized.contains("REMOTE_SECRET"));
+    }
+
+    #[test]
+    fn rejects_invalid_codex_env_vars_without_echoing_values() {
+        let cases = [
+            ("\"never-print-this\"", "env_vars must be an array"),
+            (
+                "[42]",
+                "env_vars[0] must be a string or a name/source table",
+            ),
+            (
+                "[{ source = \"remote\" }]",
+                "env_vars[0].name must be a string",
+            ),
+            (
+                "[{ name = \"TOKEN\" }]",
+                "env_vars[0].source must be local or remote",
+            ),
+            (
+                "[{ name = \"TOKEN\", source = \"never-print-this\" }]",
+                "env_vars[0].source must be local or remote",
+            ),
+        ];
+
+        for (env_vars, expected_message) in cases {
+            let dir = tempdir().expect("tempdir");
+            let config = dir.path().join("config.toml");
+            let contents =
+                format!("[mcp_servers.demo]\ncommand = \"node\"\nenv_vars = {env_vars}\n");
+            fs::write(&config, contents).expect("write config");
+
+            let error = inspect_file(&config, &CheckContext::default())
+                .expect_err("invalid env_vars declaration");
+            let message = error.to_string();
+
+            assert!(message.contains(expected_message), "{message}");
+            assert!(!message.contains("never-print-this"));
+        }
     }
 
     #[test]

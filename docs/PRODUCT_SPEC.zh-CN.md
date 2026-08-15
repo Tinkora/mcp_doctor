@@ -68,8 +68,9 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
   `~/.codex/config.toml` 和当前工作区 `.codex/config.toml`；Codex 本身只在项目
   受信任时加载项目级配置。
 - server 字段：`command`、`args`，可选 `cwd` 和字符串 `env`。
-- 跳过 `enabled = false` 的 Codex 条目；接受 `env_vars` 声明，但不从进程环境读取
-  其中命名的值。
+- 跳过 `enabled = false` 的 Codex 条目。`env_vars` 接受字符串或
+  `{ name, source = "local" | "remote" }` table；只验证声明结构，不从进程环境
+  读取其中命名的值。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
   不支持传输诊断。
 - 忽略 plugin 提供的 Codex MCP server，因为顶层用户配置中没有它们的启动命令。

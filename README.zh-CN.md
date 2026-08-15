@@ -126,7 +126,9 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
   `[mcp_servers.<name>]` 下的 Codex 用户级与当前工作区 server，结构依据
   [Codex 官方 MCP 文档](https://developers.openai.com/codex/mcp/)；
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
-- 跳过 Codex `enabled = false` server；不从进程环境查找或输出 `env_vars` 命名的值。
+- 跳过 Codex `enabled = false` server。`env_vars` 条目可以是名称，或
+  `{ name, source = "local" | "remote" }` table；工具会验证结构，但不会从进程
+  环境查找或输出其中命名的值。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
   也不会被展开。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会被报告，但不会套用某个

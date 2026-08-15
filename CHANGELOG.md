@@ -17,6 +17,8 @@ All notable changes to MCP Doctor are documented here.
 
 ### Fixed
 
+- Reject malformed Codex `env_vars` declarations without resolving or emitting
+  the named process environment values.
 - Redact TOML source lines from parser diagnostics so malformed values cannot
   be echoed in human or JSON output.
 - Upload release assets while creating the draft, recover safely from an

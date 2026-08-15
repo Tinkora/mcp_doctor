@@ -7,9 +7,10 @@ metadata. It reads the process `PATH` for bare-command lookup and reads the
 home-directory location only to discover conventional files. Although selected
 configuration is parsed in memory, configured environment values are used only
 for static empty-value and placeholder detection. They are not emitted,
-interpolated, or used as the command lookup environment. Values named by Codex
-`env_vars` are never retrieved from the process environment. Placeholder
-messages do not echo the detected token.
+interpolated, or used as the command lookup environment. Codex `env_vars`
+declarations are structurally validated, but their named values are never
+retrieved from the process environment. Placeholder messages do not echo the
+detected token.
 
 Human-readable output escapes terminal control characters from paths, server
 names, environment keys, and diagnostics. Ordinary Unicode text remains

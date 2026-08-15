@@ -84,8 +84,9 @@ values.
   `.codex/config.toml`; Codex itself loads project files only for trusted
   projects.
 - Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
-- Codex `enabled = false` entries are skipped. `env_vars` declarations are
-  accepted without reading their named values from the process environment.
+- Codex `enabled = false` entries are skipped. `env_vars` accepts strings and
+  `{ name, source = "local" | "remote" }` tables. These declarations are
+  structurally validated without reading their named process values.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
   inspected; they receive an explicit unsupported-transport diagnostic.
 - Plugin-provided Codex MCP servers are ignored because their launch command is

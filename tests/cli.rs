@@ -254,6 +254,50 @@ fn discovery_inspects_codex_user_and_project_configs_and_reports_conflicts() {
 }
 
 #[test]
+fn codex_env_vars_never_read_or_echo_process_values() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.demo]
+            command = "missing-command"
+            env_vars = [
+                "MCP_DOCTOR_LOCAL_SENTINEL",
+                { name = "MCP_DOCTOR_REMOTE_SENTINEL", source = "remote" },
+            ]
+        "#,
+    )
+    .expect("write config");
+
+    for format in [None, Some("json")] {
+        let mut process = command();
+        process
+            .arg("--no-discover")
+            .arg(&config)
+            .env("MCP_DOCTOR_LOCAL_SENTINEL", "local-process-secret")
+            .env("MCP_DOCTOR_REMOTE_SENTINEL", "remote-process-secret");
+        if let Some(format) = format {
+            process.arg("--format").arg(format);
+        }
+        let output = process.output().expect("run");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+        let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+        for private_text in [
+            "MCP_DOCTOR_LOCAL_SENTINEL",
+            "MCP_DOCTOR_REMOTE_SENTINEL",
+            "local-process-secret",
+            "remote-process-secret",
+        ] {
+            assert!(!stdout.contains(private_text));
+            assert!(!stderr.contains(private_text));
+        }
+    }
+}
+
+#[test]
 fn reports_conflicting_server_names_across_explicit_files() {
     let dir = tempdir().expect("tempdir");
     let user_config = dir.path().join("user-mcp.json");
