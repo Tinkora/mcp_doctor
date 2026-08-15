@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx` or
 Node binary on `PATH`, an invalid working directory, and unresolved environment
 placeholders.
 
-> Status: Alpha (`v0.1.1` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.2` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -69,7 +69,11 @@ mcp-doctor ~/.cursor/mcp.json
 ```
 
 With no path, MCP Doctor checks existing conventional files in the current
-workspace and the current user's known Claude Desktop, Cline, and Cursor paths:
+workspace and the current user's known Claude Desktop, Cline, Cursor, VS Code,
+and GitHub Copilot CLI paths. Repository discovery includes `.vscode/mcp.json`,
+`.mcp.json`, `.github/mcp.json`, `.github/mcp-config.json`, and
+`.cursor/mcp.json`; user discovery includes Copilot CLI's
+`~/.copilot/mcp-config.json` and the platform's VS Code user `mcp.json`.
 
 ```bash
 mcp-doctor

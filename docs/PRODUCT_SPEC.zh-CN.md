@@ -12,7 +12,10 @@
 [#1948](https://github.com/cline/cline/issues/1948)、[#902](https://github.com/cline/cline/issues/902)，
 Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
 [#7509](https://github.com/continuedev/continue/issues/7509)，GitHub MCP Server 的
-[#1396](https://github.com/github/github-mcp-server/issues/1396)，以及相关
+[#1396](https://github.com/github/github-mcp-server/issues/1396)，
+以及 GitHub Copilot CLI 的
+[#3380](https://github.com/github/copilot-cli/issues/3380) 和
+[#4429](https://github.com/github/copilot-cli/issues/4429)，以及相关
 Stack Overflow 问题都反复出现这些故障。
 
 配置解析本身也是反复出现的兼容性边界。GitHub Copilot CLI 的
@@ -37,7 +40,10 @@ JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
 - YAML、TOML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
 
 自动发现保持保守：当前工作区的 `.vscode/mcp.json`、`.mcp.json`、
-`.cursor/mcp.json`，以及当前平台上 Claude Desktop、Cline、Cursor 的已知用户配置路径。
+`.github/mcp.json`、`.github/mcp-config.json`、`.cursor/mcp.json`，以及当前平台上
+Claude Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI 的已知用户配置路径。
+Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
+和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。
 
 ## 检查与安全
 

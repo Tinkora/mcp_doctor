@@ -19,7 +19,7 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 工作目录无效、环境变量占位符未解析。这些问题通常发生在 MCP Inspector 或
 客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.1` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.2` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -31,7 +31,8 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
 [#7509](https://github.com/continuedev/continue/issues/7509)，以及 GitHub MCP
 server 的
-[#1396](https://github.com/github/github-mcp-server/issues/1396)。Stack Overflow 的
+[#1396](https://github.com/github/github-mcp-server/issues/1396)。
+Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
 
@@ -59,7 +60,10 @@ mcp-doctor ~/.cursor/mcp.json
 ```
 
 没有路径时，工具检查当前工作区以及当前用户已存在的 Claude Desktop、Cline、
-Cursor 约定路径：
+Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库级发现包括
+`.vscode/mcp.json`、`.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json`
+和 `.cursor/mcp.json`；用户级发现包括 Copilot CLI 的
+`~/.copilot/mcp-config.json` 以及当前平台的 VS Code 用户级 `mcp.json`。
 
 ```bash
 mcp-doctor
