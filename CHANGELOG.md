@@ -2,7 +2,18 @@
 
 All notable changes to MCP Doctor are documented here.
 
+<!-- markdownlint-disable MD024 -->
+
 ## [Unreleased]
+
+## [0.1.2] - 2026-08-15
+
+### Added
+
+- Discover repository-level `.github/mcp.json` and `.github/mcp-config.json`
+  files used by GitHub Copilot CLI alongside existing workspace configs.
+- Discover GitHub Copilot CLI's `~/.copilot/mcp-config.json` and platform VS
+  Code user-level `mcp.json` files without executing or contacting any server.
 
 ## [0.1.1] - 2026-08-15
 
@@ -35,3 +46,5 @@ All notable changes to MCP Doctor are documented here.
   emitted and commands are never executed.
 - Four-platform release archives with SHA-256 checksums, a CycloneDX 1.5 SBOM,
   build provenance, and SBOM attestations.
+
+<!-- markdownlint-enable MD024 -->

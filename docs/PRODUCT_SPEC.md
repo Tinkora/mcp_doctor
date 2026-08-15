@@ -16,7 +16,9 @@ tracker ([#40](https://github.com/modelcontextprotocol/servers/issues/40),
 ([#4791](https://github.com/continuedev/continue/issues/4791),
 [#7509](https://github.com/continuedev/continue/issues/7509)), GitHub MCP
 Server ([#1396](https://github.com/github/github-mcp-server/issues/1396)),
-and related Stack Overflow reports ([spawn npx](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection),
+GitHub Copilot CLI ([#3380](https://github.com/github/copilot-cli/issues/3380),
+[#4429](https://github.com/github/copilot-cli/issues/4429)), and related Stack
+Overflow reports ([spawn npx](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection),
 [spawn npx/einval](https://stackoverflow.com/questions/79586881/spawn-npx-enoent-or-spawn-einval-when-configuring-mcp-server-with-cline-exte),
 [VS Code WSL startup](https://stackoverflow.com/questions/79706687/unable-to-start-mcp-servers-in-vs-code-in-wsl)).
 
@@ -49,8 +51,12 @@ for CI wrappers and never includes configured environment values.
   intentionally out of scope until independent compatibility evidence exists.
 
 Automatic discovery is intentionally conservative: the current workspace
-`.vscode/mcp.json`, `.mcp.json`, `.cursor/mcp.json`, plus known user config
-locations for Claude Desktop, Cline, and Cursor on the current platform.
+`.vscode/mcp.json`, `.mcp.json`, `.github/mcp.json`, `.github/mcp-config.json`,
+and `.cursor/mcp.json`, plus known user config locations for Claude Desktop,
+Cline, Cursor, VS Code, and GitHub Copilot CLI on the current platform. The
+Copilot paths are grounded in repository-scoped configuration reports in
+[#3380](https://github.com/github/copilot-cli/issues/3380) and
+[#4429](https://github.com/github/copilot-cli/issues/4429).
 
 ## Checks and safety
 

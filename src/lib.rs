@@ -685,23 +685,43 @@ pub fn inspect_value(
 
 /// Return existing conventional config paths for the current workspace and user.
 pub fn discover_paths(workspace: &Path) -> Vec<PathBuf> {
+    let home = home_dir();
+    let app_data = env::var_os("APPDATA").map(PathBuf::from);
+    discover_paths_from_roots(workspace, home.as_deref(), app_data.as_deref())
+}
+
+fn discover_paths_from_roots(
+    workspace: &Path,
+    home: Option<&Path>,
+    app_data: Option<&Path>,
+) -> Vec<PathBuf> {
     let mut candidates = vec![
         workspace.join(".vscode/mcp.json"),
         workspace.join(".mcp.json"),
+        workspace.join(".github/mcp.json"),
+        workspace.join(".github/mcp-config.json"),
         workspace.join(".cursor/mcp.json"),
     ];
-    if let Some(home) = home_dir() {
+    if let Some(home) = home {
         candidates.extend([
+            home.join(".copilot/mcp-config.json"),
             home.join(".cursor/mcp.json"),
             home.join(".config/Claude/claude_desktop_config.json"),
-            home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"),
+            home.join(".config/Code/User/mcp.json"),
+            home.join(
+                ".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+            ),
             home.join("Library/Application Support/Claude/claude_desktop_config.json"),
-            home.join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"),
+            home.join("Library/Application Support/Code/User/mcp.json"),
+            home.join(
+                "Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+            ),
         ]);
     }
-    if let Some(app_data) = env::var_os("APPDATA").map(PathBuf::from) {
+    if let Some(app_data) = app_data {
         candidates.extend([
             app_data.join("Claude/claude_desktop_config.json"),
+            app_data.join("Code/User/mcp.json"),
             app_data.join(
                 "Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
             ),
@@ -1100,5 +1120,43 @@ mod tests {
             default_command_extensions(),
             [".COM", ".EXE", ".BAT", ".CMD"].map(str::to_owned)
         );
+    }
+
+    #[test]
+    fn discovers_repository_and_copilot_config_paths() {
+        let workspace = tempdir().expect("workspace");
+        let home = tempdir().expect("home");
+        let app_data = tempdir().expect("app data");
+
+        for relative in [
+            ".vscode/mcp.json",
+            ".mcp.json",
+            ".github/mcp.json",
+            ".github/mcp-config.json",
+            ".cursor/mcp.json",
+        ] {
+            let path = workspace.path().join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
+            fs::write(path, "{}").expect("write workspace config");
+        }
+        let copilot = home.path().join(".copilot/mcp-config.json");
+        fs::create_dir_all(copilot.parent().expect("parent")).expect("create parent");
+        fs::write(&copilot, "{}").expect("write Copilot config");
+        let vscode_user = home.path().join(".config/Code/User/mcp.json");
+        fs::create_dir_all(vscode_user.parent().expect("parent")).expect("create parent");
+        fs::write(&vscode_user, "{}").expect("write VS Code config");
+        let windows_vscode_user = app_data.path().join("Code/User/mcp.json");
+        fs::create_dir_all(windows_vscode_user.parent().expect("parent")).expect("create parent");
+        fs::write(&windows_vscode_user, "{}").expect("write Windows VS Code config");
+
+        let paths =
+            discover_paths_from_roots(workspace.path(), Some(home.path()), Some(app_data.path()));
+
+        assert_eq!(paths.len(), 8);
+        assert!(paths.contains(&workspace.path().join(".github/mcp-config.json")));
+        assert!(paths.contains(&workspace.path().join(".github/mcp.json")));
+        assert!(paths.contains(&copilot));
+        assert!(paths.contains(&vscode_user));
+        assert!(paths.contains(&windows_vscode_user));
     }
 }
