@@ -6,6 +6,15 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-15
+
+### Added
+
+- Discover Claude Code's `~/.claude.json` and inspect its top-level user scope
+  plus the local scope for the current workspace.
+- Ignore other Claude Code project entries so discovery does not report or
+  expose unrelated project configuration.
+
 ## [0.1.4] - 2026-08-15
 
 ### Added

@@ -189,6 +189,24 @@ pub fn annotate_server_name_conflicts(files: &mut [FileReport]) {
 
 /// Inspect one JSON configuration file without launching any configured command.
 pub fn inspect_file(path: &Path, context: &CheckContext) -> Result<FileReport, DoctorError> {
+    inspect_file_with_workspace(path, context, None)
+}
+
+/// Inspect one configuration file and include Claude Code's local scope for
+/// the supplied workspace without inspecting other project entries.
+pub fn inspect_file_for_workspace(
+    path: &Path,
+    context: &CheckContext,
+    workspace: &Path,
+) -> Result<FileReport, DoctorError> {
+    inspect_file_with_workspace(path, context, Some(workspace))
+}
+
+fn inspect_file_with_workspace(
+    path: &Path,
+    context: &CheckContext,
+    workspace: Option<&Path>,
+) -> Result<FileReport, DoctorError> {
     let bytes = fs::read(path).map_err(|source| DoctorError::Io {
         path: path.to_path_buf(),
         source,
@@ -212,7 +230,7 @@ pub fn inspect_file(path: &Path, context: &CheckContext) -> Result<FileReport, D
             path: path.to_path_buf(),
             message: "configuration is empty".to_string(),
         })?;
-    inspect_document(path, &document, context)
+    inspect_document(path, &document, context, workspace)
 }
 
 fn jsonc_parse_options() -> jsonc_parser::ParseOptions {
@@ -277,6 +295,7 @@ fn inspect_document(
     path: &Path,
     document: &Value,
     context: &CheckContext,
+    workspace: Option<&Path>,
 ) -> Result<FileReport, DoctorError> {
     let root = document
         .as_object()
@@ -284,85 +303,111 @@ fn inspect_document(
             path: path.to_path_buf(),
             message: "the top-level JSON value must be an object".to_string(),
         })?;
-    let servers = server_map(root, path)?;
+    let server_maps = server_maps(root, path, workspace)?;
 
     let mut report = FileReport {
         path: path.to_path_buf(),
         servers: Vec::new(),
         findings: Vec::new(),
     };
-    for (name, value) in servers {
-        let server = value
-            .as_object()
-            .ok_or_else(|| DoctorError::InvalidServer {
-                path: path.to_path_buf(),
-                server: name.clone(),
-                message: "server entry must be an object".to_string(),
-            })?;
-        let transport = match server.get("type") {
-            None => "stdio",
-            Some(Value::String(value)) => value.as_str(),
-            Some(_) => {
-                return Err(DoctorError::InvalidServer {
+    for servers in server_maps {
+        for (name, value) in servers {
+            let server = value
+                .as_object()
+                .ok_or_else(|| DoctorError::InvalidServer {
                     path: path.to_path_buf(),
                     server: name.clone(),
-                    message: "type must be a string".to_string(),
+                    message: "server entry must be an object".to_string(),
+                })?;
+            let transport = match server.get("type") {
+                None => "stdio",
+                Some(Value::String(value)) => value.as_str(),
+                Some(_) => {
+                    return Err(DoctorError::InvalidServer {
+                        path: path.to_path_buf(),
+                        server: name.clone(),
+                        message: "type must be a string".to_string(),
+                    });
+                }
+            };
+            if transport != "stdio" || server.get("url").is_some() {
+                report.findings.push(Finding {
+                    code: FindingCode::UnsupportedTransport,
+                    severity: Severity::Warning,
+                    server: Some(name.clone()),
+                    location: "type".to_string(),
+                    message: "remote or non-stdio transport is outside this release".to_string(),
                 });
+                continue;
             }
-        };
-        if transport != "stdio" || server.get("url").is_some() {
-            report.findings.push(Finding {
-                code: FindingCode::UnsupportedTransport,
-                severity: Severity::Warning,
-                server: Some(name.clone()),
-                location: "type".to_string(),
-                message: "remote or non-stdio transport is outside this release".to_string(),
-            });
-            continue;
-        }
 
-        let command = match server.get("command") {
-            None => None,
-            Some(Value::String(value)) => Some(value.as_str()),
-            Some(_) => {
-                return Err(DoctorError::InvalidServer {
-                    path: path.to_path_buf(),
-                    server: name.clone(),
-                    message: "command must be a string".to_string(),
-                });
+            let command = match server.get("command") {
+                None => None,
+                Some(Value::String(value)) => Some(value.as_str()),
+                Some(_) => {
+                    return Err(DoctorError::InvalidServer {
+                        path: path.to_path_buf(),
+                        server: name.clone(),
+                        message: "command must be a string".to_string(),
+                    });
+                }
+            };
+            let args = parse_string_array(server.get("args"), path, name, "args")?;
+            let cwd = parse_optional_string(server.get("cwd"), path, name, "cwd")?;
+            let env_map = parse_string_map(server.get("env"), path, name)?;
+            report.servers.push(ServerReport {
+                name: name.clone(),
+                transport: "stdio",
+            });
+            ServerCheck {
+                server: name,
+                command,
+                args: &args,
+                cwd: cwd.as_deref(),
+                env_map: &env_map,
+                context,
             }
-        };
-        let args = parse_string_array(server.get("args"), path, name, "args")?;
-        let cwd = parse_optional_string(server.get("cwd"), path, name, "cwd")?;
-        let env_map = parse_string_map(server.get("env"), path, name)?;
-        report.servers.push(ServerReport {
-            name: name.clone(),
-            transport: "stdio",
-        });
-        ServerCheck {
-            server: name,
-            command,
-            args: &args,
-            cwd: cwd.as_deref(),
-            env_map: &env_map,
-            context,
+            .run(&mut report.findings);
         }
-        .run(&mut report.findings);
     }
     Ok(report)
 }
 
-fn server_map<'a>(
+fn server_maps<'a>(
+    root: &'a Map<String, Value>,
+    path: &Path,
+    workspace: Option<&Path>,
+) -> Result<Vec<&'a Map<String, Value>>, DoctorError> {
+    let mut maps = Vec::new();
+    if let Some(value) = root.get("mcpServers") {
+        maps.push(object_map(value, path, "mcpServers")?);
+    } else if let Some(value) = root.get("servers") {
+        maps.push(object_map(value, path, "servers")?);
+    } else if root.get("customizations").is_some() {
+        maps.push(devcontainer_server_map(root, path)?);
+    }
+
+    if is_claude_code_state(path) {
+        if let Some(workspace) = workspace {
+            if let Some(local_servers) = claude_code_local_servers(root, path, workspace)? {
+                maps.push(local_servers);
+            }
+        }
+    }
+
+    if maps.is_empty() && !is_claude_code_state(path) {
+        return Err(DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "expected a top-level mcpServers or servers object, or customizations.vscode.mcp.servers".to_string(),
+        });
+    }
+    Ok(maps)
+}
+
+fn devcontainer_server_map<'a>(
     root: &'a Map<String, Value>,
     path: &Path,
 ) -> Result<&'a Map<String, Value>, DoctorError> {
-    if let Some(value) = root.get("mcpServers") {
-        return object_map(value, path, "mcpServers");
-    }
-    if let Some(value) = root.get("servers") {
-        return object_map(value, path, "servers");
-    }
-
     let Some(customizations) = root.get("customizations") else {
         return Err(DoctorError::UnsupportedConfig {
             path: path.to_path_buf(),
@@ -407,6 +452,55 @@ fn server_map<'a>(
         });
     };
     object_map(servers, path, "customizations.vscode.mcp.servers")
+}
+
+fn is_claude_code_state(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == ".claude.json")
+}
+
+fn claude_code_local_servers<'a>(
+    root: &'a Map<String, Value>,
+    path: &Path,
+    workspace: &Path,
+) -> Result<Option<&'a Map<String, Value>>, DoctorError> {
+    let Some(projects) = root.get("projects") else {
+        return Ok(None);
+    };
+    let projects = projects
+        .as_object()
+        .ok_or_else(|| DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "projects must be an object".to_string(),
+        })?;
+    let canonical_workspace = workspace.canonicalize().ok();
+    let project = projects
+        .get(workspace.to_string_lossy().as_ref())
+        .or_else(|| {
+            canonical_workspace
+                .as_ref()
+                .and_then(|canonical_workspace| {
+                    projects.iter().find_map(|(project_path, project)| {
+                        Path::new(project_path)
+                            .canonicalize()
+                            .ok()
+                            .filter(|canonical_project| canonical_project == canonical_workspace)
+                            .map(|_| project)
+                    })
+                })
+        });
+    let Some(project) = project else {
+        return Ok(None);
+    };
+    let project = project
+        .as_object()
+        .ok_or_else(|| DoctorError::UnsupportedConfig {
+            path: path.to_path_buf(),
+            message: "the current Claude Code project entry must be an object".to_string(),
+        })?;
+    let Some(servers) = project.get("mcpServers") else {
+        return Ok(None);
+    };
+    object_map(servers, path, "projects.<current-workspace>.mcpServers").map(Some)
 }
 
 fn object_map<'a>(
@@ -795,6 +889,7 @@ fn discover_paths_from_roots(
     ];
     if let Some(home) = home {
         candidates.extend([
+            home.join(".claude.json"),
             home.join(".copilot/mcp-config.json"),
             home.join(".cursor/mcp.json"),
             home.join(".config/Claude/claude_desktop_config.json"),
@@ -1320,6 +1415,8 @@ mod tests {
         let copilot = home.path().join(".copilot/mcp-config.json");
         fs::create_dir_all(copilot.parent().expect("parent")).expect("create parent");
         fs::write(&copilot, "{}").expect("write Copilot config");
+        let claude_code = home.path().join(".claude.json");
+        fs::write(&claude_code, "{}").expect("write Claude Code config");
         let vscode_user = home.path().join(".config/Code/User/mcp.json");
         fs::create_dir_all(vscode_user.parent().expect("parent")).expect("create parent");
         fs::write(&vscode_user, "{}").expect("write VS Code config");
@@ -1330,13 +1427,71 @@ mod tests {
         let paths =
             discover_paths_from_roots(workspace.path(), Some(home.path()), Some(app_data.path()));
 
-        assert_eq!(paths.len(), 9);
+        assert_eq!(paths.len(), 10);
         assert!(paths.contains(&workspace.path().join(".devcontainer/devcontainer.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp-config.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp.json")));
         assert!(paths.contains(&copilot));
+        assert!(paths.contains(&claude_code));
         assert!(paths.contains(&vscode_user));
         assert!(paths.contains(&windows_vscode_user));
+    }
+
+    #[test]
+    fn inspects_claude_code_user_and_current_workspace_scopes_only() {
+        let dir = tempdir().expect("tempdir");
+        let workspace = dir.path().join("workspace");
+        fs::create_dir(&workspace).expect("create workspace");
+        let config = dir.path().join(".claude.json");
+        fs::write(
+            &config,
+            serde_json::to_vec(&serde_json::json!({
+                "mcpServers": {
+                    "user-server": {"command": "missing-user-command"}
+                },
+                "projects": {
+                    workspace.to_string_lossy(): {
+                        "mcpServers": {
+                            "local-server": {"command": "missing-local-command"}
+                        }
+                    },
+                    "/another/project": {
+                        "mcpServers": {
+                            "user-server": {
+                                "command": "missing-other-command",
+                                "env": {"TOKEN": "never-print-this"}
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("serialize config"),
+        )
+        .expect("write config");
+
+        let mut report = inspect_file_for_workspace(
+            &config,
+            &CheckContext::with_path(Vec::<PathBuf>::new()),
+            &workspace,
+        )
+        .expect("inspect Claude Code config");
+
+        let names: BTreeSet<_> = report
+            .servers
+            .iter()
+            .map(|server| server.name.as_str())
+            .collect();
+        assert_eq!(names, BTreeSet::from(["local-server", "user-server"]));
+        assert_eq!(report.servers.len(), 2);
+        let serialized = serde_json::to_string(&report).expect("serialize report");
+        assert!(!serialized.contains("never-print-this"));
+        annotate_server_name_conflicts(std::slice::from_mut(&mut report));
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| { finding.code != FindingCode::ServerNameConflict })
+        );
     }
 
     #[test]

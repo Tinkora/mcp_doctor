@@ -102,6 +102,54 @@ fn cli_inspects_explicit_devcontainer_mcp_configuration() {
 }
 
 #[test]
+fn discovery_inspects_claude_code_user_and_current_workspace_scopes() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let app_data = tempdir().expect("app data");
+    let config = home.path().join(".claude.json");
+    fs::write(
+        &config,
+        serde_json::to_vec(&serde_json::json!({
+            "mcpServers": {
+                "user-server": {"command": "missing-user-command"}
+            },
+            "projects": {
+                workspace.path().to_string_lossy(): {
+                    "mcpServers": {
+                        "local-server": {"command": "missing-local-command"}
+                    }
+                },
+                "/another/project": {
+                    "mcpServers": {
+                        "other-server": {
+                            "command": "missing-other-command",
+                            "env": {"TOKEN": "never-print-this"}
+                        }
+                    }
+                }
+            }
+        }))
+        .expect("serialize config"),
+    )
+    .expect("write config");
+
+    let output = command()
+        .current_dir(workspace.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("APPDATA", app_data.path())
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("Server: user-server"));
+    assert!(stdout.contains("Server: local-server"));
+    assert!(!stdout.contains("other-server"));
+    assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
 fn reports_conflicting_server_names_across_explicit_files() {
     let dir = tempdir().expect("tempdir");
     let user_config = dir.path().join("user-mcp.json");

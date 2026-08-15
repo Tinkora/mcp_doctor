@@ -34,6 +34,14 @@ that a repository server silently shadows a same-named user definition while
 the UI displays the wrong source. [#4478](https://github.com/github/copilot-cli/issues/4478)
 reports case-sensitive collision handling that starts duplicate logical servers.
 
+Claude Code stores both user and local MCP scopes in `~/.claude.json`, with
+local servers nested under the current project path. Its official
+[scope documentation](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence)
+defines that layout. Claude Code [#54803](https://github.com/anthropics/claude-code/issues/54803),
+[#77325](https://github.com/anthropics/claude-code/issues/77325), and
+[#58919](https://github.com/anthropics/claude-code/issues/58919) show recurring
+user-scope location, invalid-entry, and nested-map failures around that file.
+
 ## Smallest useful outcome
 
 Given an explicit JSON or JSONC configuration or a small set of conventional local
@@ -55,6 +63,9 @@ for CI wrappers and never includes configured environment values.
 - JSON or JSONC Dev Container files with a nested
   `customizations.vscode.mcp.servers` map, as documented by
   [VS Code](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
+- Claude Code's `~/.claude.json`, including top-level user `mcpServers` and the
+  `projects[workspace].mcpServers` map for the current workspace. Other project
+  entries are not inspected.
 - Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
   inspected; they receive an explicit unsupported-transport diagnostic.
@@ -64,8 +75,10 @@ for CI wrappers and never includes configured environment values.
 Automatic discovery is intentionally conservative: the current workspace
 `.devcontainer/devcontainer.json`, `.vscode/mcp.json`, `.mcp.json`,
 `.github/mcp.json`, `.github/mcp-config.json`, and `.cursor/mcp.json`, plus known
-user config locations for Claude Desktop, Cline, Cursor, VS Code, and GitHub
-Copilot CLI on the current platform. The Copilot paths are grounded in
+user config locations for Claude Code, Claude Desktop, Cline, Cursor, VS Code,
+and GitHub Copilot CLI on the current platform. Claude Code discovery includes
+`~/.claude.json`; only its top-level user scope and current-workspace local scope
+are selected. The Copilot paths are grounded in
 repository-scoped configuration reports in
 [#3380](https://github.com/github/copilot-cli/issues/3380) and
 [#4429](https://github.com/github/copilot-cli/issues/4429).
@@ -88,6 +101,8 @@ repository-scoped configuration reports in
 - Configured environment *keys* may appear in diagnostic locations. Values are
   parsed only for static empty-value and placeholder checks; they are not
   interpolated, used for command lookup, or emitted.
+- Claude Code project entries outside the current workspace are ignored even
+  when they coexist with inspected user-scope servers in `~/.claude.json`.
 - Exact and case-only duplicate stdio server names across inspected entries
   receive `server_name_conflict` warnings. The finding does not claim which
   definition a specific client version will select.
@@ -123,7 +138,7 @@ claim protocol compatibility or server correctness.
 
 The MVP is successful when a user can identify a missing `npx`/Node path, bad
 working directory, unresolved placeholder, or cross-file server name conflict
-without exposing a secret or running a server. Stop expanding the parser when a format lacks
-independent compatibility evidence; validate demand through concrete issue or
-discussion reports before adding another client format or a process execution
-mode.
+without exposing a secret or running a server. Stop expanding the parser when
+a format lacks independent compatibility evidence; validate demand through
+concrete issue or discussion reports before adding another client format or a
+process execution mode.
