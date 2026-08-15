@@ -224,7 +224,7 @@ fn parse_document(path: &Path, text: &str) -> Result<Value, DoctorError> {
         let document =
             toml::from_str::<toml::Table>(text).map_err(|source| DoctorError::InvalidToml {
                 path: path.to_path_buf(),
-                message: source.to_string(),
+                message: sanitized_toml_error_message(text, &source),
             })?;
         return serde_json::to_value(document).map_err(|source| DoctorError::InvalidToml {
             path: path.to_path_buf(),
@@ -247,6 +247,26 @@ fn parse_document(path: &Path, text: &str) -> Result<Value, DoctorError> {
             path: path.to_path_buf(),
             message: "configuration is empty".to_string(),
         })
+}
+
+fn sanitized_toml_error_message(text: &str, source: &toml::de::Error) -> String {
+    let Some(span) = source.span() else {
+        return source.message().to_string();
+    };
+    let mut line = 1;
+    let mut column = 1;
+    for (offset, character) in text.char_indices() {
+        if offset >= span.start {
+            break;
+        }
+        if character == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    format!("{} at line {line}, column {column}", source.message())
 }
 
 fn invalid_syntax_error(path: &Path, message: String) -> DoctorError {
@@ -1168,6 +1188,27 @@ mod tests {
         let error = inspect_file(&config, &CheckContext::default()).expect_err("invalid TOML");
 
         assert!(error.to_string().contains("invalid TOML"));
+    }
+
+    #[test]
+    fn invalid_toml_errors_do_not_echo_source_lines() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo.env]
+                TOKEN = "never-print-this\q"
+            "#,
+        )
+        .expect("write config");
+
+        let error = inspect_file(&config, &CheckContext::default()).expect_err("invalid TOML");
+        let message = error.to_string();
+
+        assert!(message.contains("invalid TOML"));
+        assert!(message.contains("line"));
+        assert!(!message.contains("never-print-this"));
     }
 
     #[test]

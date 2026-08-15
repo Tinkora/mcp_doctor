@@ -80,6 +80,65 @@ fn json_output_is_structured_and_redacted() {
 }
 
 #[test]
+fn invalid_toml_errors_do_not_echo_source_lines_in_human_output() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.demo.env]
+            TOKEN = "never-print-this\q"
+        "#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--no-discover")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(stderr.contains("invalid TOML"));
+    assert!(stderr.contains("line"));
+    assert!(!stderr.contains("never-print-this"));
+}
+
+#[test]
+fn invalid_toml_errors_do_not_echo_source_lines_in_json_output() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.demo.env]
+            TOKEN = "never-print-this\q"
+        "#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--format")
+        .arg("json")
+        .arg("--no-discover")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert!(
+        value["errors"][0]["message"]
+            .as_str()
+            .expect("error message")
+            .contains("invalid TOML")
+    );
+    assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
 fn cli_inspects_explicit_devcontainer_mcp_configuration() {
     let dir = tempdir().expect("tempdir");
     let config = dir.path().join("devcontainer.json");
