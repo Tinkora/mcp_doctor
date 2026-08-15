@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
-use mcp_doctor::{CheckContext, FileReport, Finding, Severity, discover_paths, inspect_file};
+use mcp_doctor::{
+    CheckContext, FileReport, Finding, Severity, annotate_server_name_conflicts, discover_paths,
+    inspect_file,
+};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -80,6 +83,7 @@ fn main() -> ExitCode {
             }),
         }
     }
+    annotate_server_name_conflicts(&mut files);
     let output = build_output(files, errors);
     match cli.format {
         OutputFormat::Human => print_human(&output),

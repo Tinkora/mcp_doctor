@@ -28,13 +28,21 @@ reports that comments in a repository `.mcp.json` cause every workspace server
 to be skipped by a strict JSON parser. VS Code MCP configuration uses JSONC by
 design, including comments and trailing commas.
 
+Configuration scope collisions are another concrete failure mode. GitHub
+Copilot CLI [#3379](https://github.com/github/copilot-cli/issues/3379) reports
+that a repository server silently shadows a same-named user definition while
+the UI displays the wrong source. [#4478](https://github.com/github/copilot-cli/issues/4478)
+reports case-sensitive collision handling that starts duplicate logical servers.
+
 ## Smallest useful outcome
 
 Given an explicit JSON or JSONC configuration or a small set of conventional local
 configuration paths, `mcp-doctor` reports whether each local `stdio` server is
 statically ready to launch. It checks command discoverability, explicit command
 paths, working directories, and unresolved placeholders without executing a
-command or retrieving matching values from the process environment. Human
+command or retrieving matching values from the process environment. When more
+than one file is inspected, it also reports exact and case-only stdio server
+name conflicts without selecting a client-specific winner. Human
 output is optimized for a developer at a terminal; JSON output is stable enough
 for CI wrappers and never includes configured environment values.
 
@@ -76,6 +84,9 @@ Copilot paths are grounded in repository-scoped configuration reports in
 - Configured environment *keys* may appear in diagnostic locations. Values are
   parsed only for static empty-value and placeholder checks; they are not
   interpolated, used for command lookup, or emitted.
+- Exact and case-only duplicate stdio server names across inspected entries
+  receive `server_name_conflict` warnings. The finding does not claim which
+  definition a specific client version will select.
 - The default command only reads files and metadata. There is no `--run` or
   implicit process spawn in this release.
 - Human output escapes terminal control characters from configuration content.
@@ -107,8 +118,8 @@ claim protocol compatibility or server correctness.
 ## Success and stop conditions
 
 The MVP is successful when a user can identify a missing `npx`/Node path, bad
-working directory, or unresolved placeholder from a config without exposing a
-secret or running a server. Stop expanding the parser when a format lacks
+working directory, unresolved placeholder, or cross-file server name conflict
+without exposing a secret or running a server. Stop expanding the parser when a format lacks
 independent compatibility evidence; validate demand through concrete issue or
 discussion reports before adding another client format or a process execution
 mode.

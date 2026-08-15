@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx` or
 Node binary on `PATH`, an invalid working directory, and unresolved environment
 placeholders.
 
-> Status: Alpha (`v0.1.2` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.3` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -40,6 +40,10 @@ The same startup failures recur in real client reports:
   `npx` and timeouts.
 - [GitHub MCP server #1396](https://github.com/github/github-mcp-server/issues/1396)
   reports local server startup configuration problems.
+- [GitHub Copilot CLI #3379](https://github.com/github/copilot-cli/issues/3379)
+  reports a repository definition silently shadowing a same-named user server;
+  [#4478](https://github.com/github/copilot-cli/issues/4478) reports case-only
+  collisions starting duplicate MCP processes.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -89,6 +93,11 @@ echo "$?" # 0 = no errors, 1 = check error, 2 = input error
 The default human report identifies the server, location, finding code, and a
 short remediation hint. It never prints configured environment values.
 
+When multiple files are inspected, exact or case-only duplicate stdio server
+names receive a `server_name_conflict` warning in each affected file. MCP
+Doctor does not choose a winner because precedence differs across clients and
+versions.
+
 ### Interpreting path checks
 
 Bare commands are checked only against the environment that launched MCP
@@ -114,6 +123,8 @@ The MVP reads JSON and JSONC (JSON with comments and trailing commas):
   and optional string-map `env`.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
   process-environment placeholders. They are never expanded.
+- Exact and case-only duplicate stdio server names across inspected entries are
+  reported without applying a client-specific precedence rule.
 
 Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are reported as
 unsupported and are not contacted. YAML, TOML, MCP catalog files, protocol

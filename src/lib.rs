@@ -110,6 +110,7 @@ pub enum FindingCode {
     PathContext,
     Placeholder,
     EmptyEnv,
+    ServerNameConflict,
     UnsupportedTransport,
 }
 
@@ -149,6 +150,40 @@ impl FileReport {
             .iter()
             .filter(|finding| finding.severity == Severity::Error)
             .count()
+    }
+}
+
+/// Add warnings when inspected stdio configurations declare the same server
+/// name, including names that differ only by letter case.
+pub fn annotate_server_name_conflicts(files: &mut [FileReport]) {
+    let mut occurrences: BTreeMap<String, Vec<(usize, String)>> = BTreeMap::new();
+    for (file_index, file) in files.iter().enumerate() {
+        for server in &file.servers {
+            occurrences
+                .entry(server.name.to_lowercase())
+                .or_default()
+                .push((file_index, server.name.clone()));
+        }
+    }
+
+    for conflicts in occurrences.into_values().filter(|items| items.len() > 1) {
+        for (file_index, server_name) in conflicts {
+            let file = &mut files[file_index];
+            let already_reported = file.findings.iter().any(|finding| {
+                finding.code == FindingCode::ServerNameConflict
+                    && finding.server.as_deref() == Some(server_name.as_str())
+            });
+            if already_reported {
+                continue;
+            }
+            file.findings.push(Finding {
+                code: FindingCode::ServerNameConflict,
+                severity: Severity::Warning,
+                server: Some(server_name),
+                location: "server_name".to_string(),
+                message: "server name appears in multiple inspected configuration entries; client precedence may shadow one definition".to_string(),
+            });
+        }
     }
 }
 
@@ -1158,5 +1193,65 @@ mod tests {
         assert!(paths.contains(&copilot));
         assert!(paths.contains(&vscode_user));
         assert!(paths.contains(&windows_vscode_user));
+    }
+
+    #[test]
+    fn annotates_case_insensitive_server_name_conflicts() {
+        let mut files = vec![
+            FileReport {
+                path: PathBuf::from("user/mcp.json"),
+                servers: vec![ServerReport {
+                    name: "MCPBrowser".to_string(),
+                    transport: "stdio",
+                }],
+                findings: Vec::new(),
+            },
+            FileReport {
+                path: PathBuf::from(".mcp.json"),
+                servers: vec![ServerReport {
+                    name: "mcpbrowser".to_string(),
+                    transport: "stdio",
+                }],
+                findings: Vec::new(),
+            },
+        ];
+
+        annotate_server_name_conflicts(&mut files);
+
+        assert!(files.iter().all(|file| {
+            file.findings.iter().any(|finding| {
+                finding.code == FindingCode::ServerNameConflict
+                    && finding.severity == Severity::Warning
+                    && finding
+                        .message
+                        .contains("multiple inspected configuration entries")
+            })
+        }));
+    }
+
+    #[test]
+    fn leaves_unique_server_names_unchanged() {
+        let mut files = vec![
+            FileReport {
+                path: PathBuf::from("one.json"),
+                servers: vec![ServerReport {
+                    name: "alpha".to_string(),
+                    transport: "stdio",
+                }],
+                findings: Vec::new(),
+            },
+            FileReport {
+                path: PathBuf::from("two.json"),
+                servers: vec![ServerReport {
+                    name: "beta".to_string(),
+                    transport: "stdio",
+                }],
+                findings: Vec::new(),
+            },
+        ];
+
+        annotate_server_name_conflicts(&mut files);
+
+        assert!(files.iter().all(|file| file.findings.is_empty()));
     }
 }
