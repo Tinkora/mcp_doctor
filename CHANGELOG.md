@@ -6,6 +6,13 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-15
+
+### Added
+
+- Report exact and case-only MCP server name conflicts across inspected stdio
+  configuration entries without guessing client precedence.
+
 ## [0.1.2] - 2026-08-15
 
 ### Added

@@ -19,7 +19,7 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 工作目录无效、环境变量占位符未解析。这些问题通常发生在 MCP Inspector 或
 客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.2` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.3` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -32,6 +32,9 @@ Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
 [#7509](https://github.com/continuedev/continue/issues/7509)，以及 GitHub MCP
 server 的
 [#1396](https://github.com/github/github-mcp-server/issues/1396)。
+GitHub Copilot CLI 的 [#3379](https://github.com/github/copilot-cli/issues/3379)
+报告仓库级定义静默覆盖同名用户级 server；[#4478](https://github.com/github/copilot-cli/issues/4478)
+报告仅大小写不同的名称会重复启动 MCP 进程。
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -79,6 +82,10 @@ echo "$?" # 0 = 无错误，1 = 检查错误，2 = 输入错误
 默认人类报告会列出 server、位置、诊断代码和简短修复提示，但不会打印配置中的
 环境变量值。
 
+同时检查多个文件时，完全同名或仅大小写不同的 stdio server 会在每个受影响文件中
+收到 `server_name_conflict` warning。不同客户端和版本的优先级并不一致，因此 MCP
+Doctor 不会替客户端选择胜出定义。
+
 ### 如何理解路径检查
 
 裸命令只根据启动 MCP Doctor 的当前环境检查。`path_context` warning 表示该命令在
@@ -99,6 +106,8 @@ MVP 读取 JSON 和 JSONC（允许注释与尾逗号）：
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
   也不会被展开。
+- 多个已检查条目中完全同名或仅大小写不同的 stdio server 会被报告，但不会套用某个
+  客户端专有的优先级规则。
 
 带 `url`、HTTP、SSE 或其他非 stdio `type` 的远程条目会报告不支持，不会发起连接。
 在有独立需求和兼容性证据前，YAML、TOML、MCP catalog、协议握手和 server 执行均不在范围内。
