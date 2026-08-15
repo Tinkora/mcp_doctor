@@ -6,6 +6,8 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-15
+
 ### Added
 
 - Discover Claude Code's `~/.claude.json` and inspect its top-level user scope
