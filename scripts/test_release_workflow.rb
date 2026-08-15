@@ -6,14 +6,27 @@ workflow = File.read(
   encoding: "UTF-8"
 )
 
+release_match = workflow.match(
+  /^  release:\n(?<body>.*?)(?=^  [a-zA-Z0-9_]+:\n|\z)/m
+)
+abort("release workflow is missing the release job") unless release_match
+
+release = release_match[0]
+
 required_fragments = [
   "cargo-cyclonedx --version 0.5.9 --locked",
   "mcp-doctor-${RELEASE_TAG}.cdx.json",
   "actions/attest@",
   "subject-path:",
   "sbom-path:",
-  'release_id="$(gh api',
-  'repos/${GH_REPO}/releases/${release_id}',
+  'gh release create "${RELEASE_TAG}" "${assets[@]}"',
+  "--paginate --slurp",
+  "Replacing interrupted draft",
+  "refusing to overwrite published release",
+  "Remote release asset inventory is not exact",
+  "Remote release asset digest does not match",
+  'repos/${GH_REPO}/releases/${RELEASE_ID}',
+  '.draft == true and .tag_name == $tag',
   "-F draft=false"
 ]
 
@@ -30,5 +43,6 @@ unless unpinned_actions.empty?
 end
 
 abort("draft releases must be published by release id") if workflow.include?("gh release edit")
+abort("release assets must be uploaded during draft creation") if release.include?("gh release upload")
 
 puts "release workflow contract passed"

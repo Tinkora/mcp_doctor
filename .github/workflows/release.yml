@@ -315,10 +315,7 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Reverify tag and publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+      - name: Reverify release assets and tag
         run: |
           set -euo pipefail
           [[ "$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" == "${GITHUB_SHA}" ]] || {
@@ -326,29 +323,134 @@ jobs:
             exit 1
           }
           (cd release-assets && sha256sum --check --strict -- ./*.sha256)
-          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | LC_ALL=C sort -z)
-          [[ "${#assets[@]}" == "10" ]] || {
+          [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" == "10" ]] || {
             echo "unexpected release asset count" >&2
             exit 1
           }
-          release_id="$(gh api \
-            --method POST \
-            "repos/${GH_REPO}/releases" \
-            -f tag_name="${RELEASE_TAG}" \
-            -f target_commitish="${GITHUB_SHA}" \
-            -f name="MCP Doctor ${RELEASE_TAG}" \
-            -F draft=true \
-            -F prerelease=false \
-            -F generate_release_notes=true \
-            --jq '.id')"
-          release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
-          test "$(jq -r '.tag_name' <<< "${release_json}")" = "${RELEASE_TAG}"
-          test "$(jq -r '.draft' <<< "${release_json}")" = true
-          gh release upload "${RELEASE_TAG}" "${assets[@]}"
-          release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
-          test "$(jq -r '.assets | length' <<< "${release_json}")" = 10
-          gh api \
-            --method PATCH \
-            "repos/${GH_REPO}/releases/${release_id}" \
+
+      - name: Create GitHub Release draft
+        id: create_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(
+            find release-assets -maxdepth 1 -type f -print0 | LC_ALL=C sort -z
+          )
+          releases_json="$(gh api --paginate --slurp \
+            "repos/${GH_REPO}/releases?per_page=100")"
+          matching_releases="$(jq -c --arg tag "${RELEASE_TAG}" \
+            '[.[][] | select(.tag_name == $tag)]' <<<"${releases_json}")"
+          match_count="$(jq -r 'length' <<<"${matching_releases}")"
+          if ((match_count > 1)); then
+            echo "multiple releases use ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if ((match_count == 1)); then
+            release_json="$(jq -c '.[0]' <<<"${matching_releases}")"
+            release_id="$(jq -er '.id' <<<"${release_json}")"
+            if jq -e '.draft == true' <<<"${release_json}" >/dev/null; then
+              echo "Replacing interrupted draft ${release_id} for ${RELEASE_TAG}."
+              gh api --method DELETE "repos/${GH_REPO}/releases/${release_id}"
+            else
+              echo "refusing to overwrite published release ${release_id} for ${RELEASE_TAG}" >&2
+              exit 1
+            fi
+          fi
+
+          gh release create "${RELEASE_TAG}" "${assets[@]}" \
+            --repo "${GH_REPO}" \
+            --verify-tag \
+            --target "${GITHUB_SHA}" \
+            --title "MCP Doctor ${RELEASE_TAG}" \
+            --generate-notes \
+            --draft >/dev/null
+          releases_json="$(gh api --paginate --slurp \
+            "repos/${GH_REPO}/releases?per_page=100")"
+          matching_releases="$(jq -c --arg tag "${RELEASE_TAG}" \
+            '[.[][] | select(.tag_name == $tag and .draft == true)]' \
+            <<<"${releases_json}")"
+          if [[ "$(jq -r 'length' <<<"${matching_releases}")" != "1" ]]; then
+            echo "new draft release cannot be resolved uniquely" >&2
+            exit 1
+          fi
+          release_id="$(jq -er '.[0].id' <<<"${matching_releases}")"
+          echo "release_id=${release_id}" >>"${GITHUB_OUTPUT}"
+
+      - name: Verify remote release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create_release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(
+            find release-assets -maxdepth 1 -type f -print0 | LC_ALL=C sort -z
+          )
+          release_json="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")"
+          jq -e --arg tag "${RELEASE_TAG}" \
+            '.tag_name == $tag and .draft == true and .prerelease == false' \
+            <<<"${release_json}" >/dev/null
+          expected_names="$(printf '%s\n' "${assets[@]}" | sed 's|.*/||' | LC_ALL=C sort)"
+          remote_names="$(jq -r '.assets[].name' <<<"${release_json}" | LC_ALL=C sort)"
+          if [[ "${remote_names}" != "${expected_names}" ]]; then
+            echo "Remote release asset inventory is not exact." >&2
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            asset_name="$(basename "${asset}")"
+            local_digest="sha256:$(sha256sum -- "${asset}" | cut -d ' ' -f 1)"
+            remote_digest="$(jq -r --arg name "${asset_name}" \
+              '.assets[] | select(.name == $name) | .digest // empty' \
+              <<<"${release_json}")"
+            if [[ "${remote_digest}" != "${local_digest}" ]]; then
+              echo "Remote release asset digest does not match ${asset_name}." >&2
+              exit 1
+            fi
+          done
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create_release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")"
+          jq -e --arg tag "${RELEASE_TAG}" \
+            '.tag_name == $tag and .draft == true and .prerelease == false' \
+            <<<"${release_json}" >/dev/null || {
+              echo "release changed before publication" >&2
+              exit 1
+            }
+          gh api --method PATCH "repos/${GH_REPO}/releases/${RELEASE_ID}" \
             -F draft=false \
+            -F prerelease=false \
             --jq '.draft' | grep -qx false
+
+      - name: Remove failed release draft
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create_release.outputs.release_id }}
+        run: |
+          set -uo pipefail
+          release_id="${RELEASE_ID:-}"
+          if [[ ! "${release_id}" =~ ^[0-9]+$ ]]; then
+            releases_json="$(gh api --paginate --slurp \
+              "repos/${GH_REPO}/releases?per_page=100" 2>/dev/null)" || exit 0
+            matching_drafts="$(jq -c --arg tag "${RELEASE_TAG}" \
+              '[.[][] | select(.tag_name == $tag and .draft == true)]' \
+              <<<"${releases_json}")"
+            [[ "$(jq -r 'length' <<<"${matching_drafts}")" == "1" ]] || exit 0
+            release_id="$(jq -er '.[0].id' <<<"${matching_drafts}")" || exit 0
+          fi
+          release_json="$(gh api \
+            "repos/${GH_REPO}/releases/${release_id}" 2>/dev/null)" || exit 0
+          if jq -e --arg tag "${RELEASE_TAG}" \
+            '.draft == true and .tag_name == $tag' \
+            <<<"${release_json}" >/dev/null; then
+            gh api --method DELETE "repos/${GH_REPO}/releases/${release_id}"
+          fi
