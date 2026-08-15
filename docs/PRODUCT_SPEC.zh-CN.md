@@ -28,6 +28,14 @@ Stack Overflow 问题都反复出现这些故障。
 覆盖同名用户级定义，但 UI 仍展示错误来源；[#4478](https://github.com/github/copilot-cli/issues/4478)
 显示区分大小写的冲突处理会重复启动逻辑上相同的 server。
 
+Claude Code 会把 user 和 local MCP scope 都存入 `~/.claude.json`，其中 local
+server 嵌套在当前 project 路径下；该结构由其
+[官方 scope 文档](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence)
+定义。Claude Code 的 [#54803](https://github.com/anthropics/claude-code/issues/54803)、
+[#77325](https://github.com/anthropics/claude-code/issues/77325) 和
+[#58919](https://github.com/anthropics/claude-code/issues/58919) 显示该文件反复出现
+user scope 位置、无效条目和嵌套 map 故障。
+
 ## 最小可用结果
 
 给定 JSON/JSONC 配置或少量约定的本地配置路径，`mcp-doctor` 静态报告每个本地
@@ -43,6 +51,8 @@ JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
 - JSON/JSONC Dev Container 文件中的嵌套
   `customizations.vscode.mcp.servers` map，结构依据
   [VS Code 官方文档](https://code.visualstudio.com/docs/agent-customization/mcp-servers)。
+- Claude Code 的 `~/.claude.json`，包括顶层 user `mcpServers` 和当前工作区对应的
+  `projects[workspace].mcpServers`；不检查其他 project 条目。
 - server 字段：`command`、`args`，可选 `cwd` 和字符串 `env`。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
   不支持传输诊断。
@@ -50,8 +60,9 @@ JSON 输出可供 CI 包装使用，且不会包含配置的环境变量值。
 
 自动发现保持保守：当前工作区的 `.devcontainer/devcontainer.json`、
 `.vscode/mcp.json`、`.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json`、
-`.cursor/mcp.json`，以及当前平台上 Claude Desktop、Cline、Cursor、VS Code 和
-GitHub Copilot CLI 的已知用户配置路径。
+`.cursor/mcp.json`，以及当前平台上 Claude Code、Claude Desktop、Cline、Cursor、
+VS Code 和 GitHub Copilot CLI 的已知用户配置路径。Claude Code 发现包括
+`~/.claude.json`，但只选择顶层 user scope 和当前工作区 local scope。
 Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
 和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。
 
@@ -68,6 +79,8 @@ Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/c
   或配置值。VS Code 的 `${input:name}` 引用由客户端提供，不报告也不展开。
 - 诊断位置可以出现环境变量 key。配置值只在内存中用于空值和占位符静态检查，不做
   插值、不用于命令查找，也不输出。
+- 即使 `~/.claude.json` 同时包含已检查的 user server，也会忽略当前工作区之外的
+  Claude Code project 条目。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会收到
   `server_name_conflict` warning；诊断不宣称特定客户端版本会选择哪个定义。
 - 默认命令只读文件和元数据；本版本没有 `--run`，也不会隐式启动进程。

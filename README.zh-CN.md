@@ -35,6 +35,11 @@ server 的
 GitHub Copilot CLI 的 [#3379](https://github.com/github/copilot-cli/issues/3379)
 报告仓库级定义静默覆盖同名用户级 server；[#4478](https://github.com/github/copilot-cli/issues/4478)
 报告仅大小写不同的名称会重复启动 MCP 进程。
+Claude Code 的 [#54803](https://github.com/anthropics/claude-code/issues/54803)
+报告 user scope 配置被写入但列表不读取的位置；
+[#77325](https://github.com/anthropics/claude-code/issues/77325) 和
+[#58919](https://github.com/anthropics/claude-code/issues/58919) 则显示
+`~/.claude.json` 中的无效或嵌套条目会破坏 MCP 配置。
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -62,12 +67,13 @@ cargo install --path . --locked
 mcp-doctor ~/.cursor/mcp.json
 ```
 
-没有路径时，工具检查当前工作区以及当前用户已存在的 Claude Desktop、Cline、
-Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库级发现包括
+没有路径时，工具检查当前工作区以及当前用户已存在的 Claude Code、Claude Desktop、
+Cline、Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库级发现包括
 `.devcontainer/devcontainer.json`、`.vscode/mcp.json`、`.mcp.json`、
 `.github/mcp.json`、`.github/mcp-config.json` 和 `.cursor/mcp.json`；用户级发现
-包括 Copilot CLI 的 `~/.copilot/mcp-config.json` 以及当前平台的 VS Code 用户级
-`mcp.json`。
+包括 Claude Code 的 `~/.claude.json`、Copilot CLI 的
+`~/.copilot/mcp-config.json` 以及当前平台的 VS Code 用户级 `mcp.json`。对于
+Claude Code，MCP Doctor 只检查顶层 user server 和属于当前工作区的 local server。
 
 ```bash
 mcp-doctor
@@ -107,6 +113,9 @@ MVP 读取 JSON 和 JSONC（允许注释与尾逗号）：
 - `.devcontainer/devcontainer.json` 中的 VS Code Dev Container
   `customizations.vscode.mcp.servers` map（参见
   [VS Code 官方 MCP 文档](https://code.visualstudio.com/docs/agent-customization/mcp-servers)）；
+- `~/.claude.json` 顶层 `mcpServers` 中的 Claude Code user server，以及
+  `projects[workspace].mcpServers` 中当前工作区的 local server，结构依据
+  [Claude Code 官方 scope 文档](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence)；
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
   也不会被展开。
@@ -122,7 +131,8 @@ MCP Doctor 默认只读。它读取指定 JSON 和文件元数据，并读取进
 可发现性。它不会启动进程、发起网络请求、从进程环境中读取占位符对应的值，也不会在
 报告中包含配置的环境变量值。占位符诊断使用通用消息，不回显占位符 token；VS Code 的
 `${input:name}` 引用因其值由客户端提供而豁免，不会读取进程环境。环境变量 key 和 server
-名称可能作为位置出现，但 human 输出会转义终端控制字符。分享配置前请先移除 secret。
+名称可能作为位置出现，但 human 输出会转义终端控制字符。读取 `~/.claude.json` 时会忽略
+当前工作区之外的 project 条目。分享配置前请先移除 secret。
 
 ## 与 MCP Inspector 的边界
 
@@ -141,7 +151,7 @@ cargo clippy --all-targets --locked -- -D warnings
 
 测试覆盖支持的配置封装、JSONC 注释和尾逗号、当前进程 PATH 与 `PATHEXT`、确定和客户端
 相关的路径诊断、占位符脱敏、VS Code 输入引用、终端安全输出、不支持的传输、坏输入、
-JSON 路径编码、CLI 退出码和“不执行命令”边界。
+Claude Code user/local scope 选择、JSON 路径编码、CLI 退出码和“不执行命令”边界。
 
 请阅读[产品规格](docs/PRODUCT_SPEC.zh-CN.md)了解证据门槛、发现路径和停止条件；修改前请阅读
 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)、

@@ -44,6 +44,11 @@ The same startup failures recur in real client reports:
   reports a repository definition silently shadowing a same-named user server;
   [#4478](https://github.com/github/copilot-cli/issues/4478) reports case-only
   collisions starting duplicate MCP processes.
+- Claude Code [#54803](https://github.com/anthropics/claude-code/issues/54803)
+  reports user-scope configuration being written where listing did not read it,
+  while [#77325](https://github.com/anthropics/claude-code/issues/77325) and
+  [#58919](https://github.com/anthropics/claude-code/issues/58919) show invalid
+  and nested entries in `~/.claude.json` disrupting MCP configuration.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -73,12 +78,14 @@ mcp-doctor ~/.cursor/mcp.json
 ```
 
 With no path, MCP Doctor checks existing conventional files in the current
-workspace and the current user's known Claude Desktop, Cline, Cursor, VS Code,
-and GitHub Copilot CLI paths. Repository discovery includes
+workspace and the current user's known Claude Code, Claude Desktop, Cline,
+Cursor, VS Code, and GitHub Copilot CLI paths. Repository discovery includes
 `.devcontainer/devcontainer.json`, `.vscode/mcp.json`, `.mcp.json`,
 `.github/mcp.json`, `.github/mcp-config.json`, and `.cursor/mcp.json`; user
-discovery includes Copilot CLI's `~/.copilot/mcp-config.json` and the platform's
-VS Code user `mcp.json`.
+discovery includes Claude Code's `~/.claude.json`, Copilot CLI's
+`~/.copilot/mcp-config.json`, and the platform's VS Code user `mcp.json`. For
+Claude Code, MCP Doctor inspects top-level user servers and only the local
+servers belonging to the current workspace.
 
 ```bash
 mcp-doctor
@@ -123,6 +130,9 @@ The MVP reads JSON and JSONC (JSON with comments and trailing commas):
 - a VS Code Dev Container `customizations.vscode.mcp.servers` map in
   `.devcontainer/devcontainer.json` (see the
   [official VS Code MCP documentation](https://code.visualstudio.com/docs/agent-customization/mcp-servers));
+- Claude Code user servers at top-level `mcpServers` and current-workspace local
+  servers under `projects[workspace].mcpServers` in `~/.claude.json`, following
+  the [official Claude Code scope documentation](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence);
 - stdio fields `command`, optional string-array `args`, optional string `cwd`,
   and optional string-map `env`.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
@@ -145,7 +155,9 @@ its reports. Placeholder diagnostics are generic and do not echo the placeholder
 token. VS Code `${input:name}` references are exempt because their values are
 provided by the client, not read from the process environment. Environment keys
 and server names can appear as locations, while terminal control characters in
-human output are escaped. Remove secrets before sharing a config file.
+human output are escaped. When reading `~/.claude.json`, project entries other
+than the current workspace are ignored. Remove secrets before sharing a config
+file.
 
 ## MCP Inspector boundary
 
@@ -168,8 +180,9 @@ cargo clippy --all-targets --locked -- -D warnings
 The test suite covers supported envelopes, JSONC comments and trailing commas,
 current-process PATH and `PATHEXT`, deterministic and client-dependent path
 diagnostics, placeholder redaction, VS Code input references, terminal-safe
-output, unsupported transports, malformed input, JSON path encoding, CLI exit
-codes, and the no-execution boundary.
+output, Claude Code user/local scope selection, unsupported transports,
+malformed input, JSON path encoding, CLI exit codes, and the no-execution
+boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),
