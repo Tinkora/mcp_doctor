@@ -6,12 +6,20 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-16
+
 ### Added
 
 - Parse Codex `config.toml` files, discover user and current-workspace scopes,
   and apply existing static stdio diagnostics to top-level `mcp_servers`.
 - Skip disabled Codex servers and report remote Codex entries without
   connecting to them or reading values named by `env_vars`.
+
+### Fixed
+
+- Upload release assets while creating the draft, recover safely from an
+  interrupted draft, and verify the exact remote names and SHA-256 digests
+  before publishing by release ID.
 
 ## [0.1.5] - 2026-08-15
 
