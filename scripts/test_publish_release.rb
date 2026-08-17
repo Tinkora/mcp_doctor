@@ -49,6 +49,15 @@ class PublishReleaseTest < Minitest::Test
     assert calls.any? { |call| call.join(" ").include?("/git/tags/#{TAG_OBJECT_SHA}") }
   end
 
+  def test_create_retries_when_the_new_draft_is_temporarily_missing_from_listings
+    update_state { |value| value["hide_created_release_lists"] = 1 }
+
+    _stdout, stderr, status = run_script("create")
+
+    assert status.success?, stderr
+    assert_equal 3, state.fetch("release_list_reads")
+  end
+
   def test_create_replaces_only_an_owned_interrupted_draft
     previous = owned_release(id: 7, body: "#{owner_marker}\n<!-- tinkora-release-run:7:1 -->")
     update_state { |value| value["releases"] << previous }
