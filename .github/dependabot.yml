@@ -14,6 +14,10 @@ updates:
     groups:
       cargo-patch-minor:
         update-types: [patch, minor]
+    ignore:
+      # jsonc-parser 0.27+ uses let-chain syntax unavailable on Rust 1.85.
+      - dependency-name: jsonc-parser
+        versions: [">= 0.27.0"]
 
   - package-ecosystem: github-actions
     directory: /
