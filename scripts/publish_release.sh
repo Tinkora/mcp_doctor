@@ -88,6 +88,40 @@ verify_owned_draft() {
   ' <<<"${release_json}" >/dev/null
 }
 
+resolve_owned_draft() {
+  local max_attempts="${1:-30}" attempt releases_json matching_releases match_count
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if ! releases_json="$(list_releases)"; then
+      return 1
+    fi
+    matching_releases="$(jq -c \
+      --arg tag "${RELEASE_TAG}" \
+      --arg sha "${GITHUB_SHA}" \
+      --arg owner "${owner_marker}" \
+      --arg run "${run_marker}" '
+        [.[][] | select(
+          .tag_name == $tag
+          and .target_commitish == $sha
+          and .draft == true
+          and ((.body // "") | contains($owner))
+          and ((.body // "") | contains($run))
+        )]
+      ' <<<"${releases_json}")"
+    match_count="$(jq -r 'length' <<<"${matching_releases}")"
+    if [[ "${match_count}" == "1" ]]; then
+      jq -er '.[0].id' <<<"${matching_releases}"
+      return 0
+    fi
+    if ((match_count > 1)); then
+      echo "multiple owned drafts use ${RELEASE_TAG}" >&2
+      return 1
+    fi
+    ((attempt == max_attempts)) || sleep 1
+  done
+  echo "owned draft release cannot be resolved uniquely" >&2
+  return 1
+}
+
 create_release() {
   local releases_json matching_releases match_count release_json release_id release_notes
   verify_remote_tag
@@ -129,25 +163,7 @@ create_release() {
     --notes "${release_notes}" \
     --generate-notes \
     --draft >/dev/null
-  releases_json="$(list_releases)"
-  matching_releases="$(jq -c \
-    --arg tag "${RELEASE_TAG}" \
-    --arg sha "${GITHUB_SHA}" \
-    --arg owner "${owner_marker}" \
-    --arg run "${run_marker}" '
-      [.[][] | select(
-        .tag_name == $tag
-        and .target_commitish == $sha
-        and .draft == true
-        and ((.body // "") | contains($owner))
-        and ((.body // "") | contains($run))
-      )]
-    ' <<<"${releases_json}")"
-  if [[ "$(jq -r 'length' <<<"${matching_releases}")" != "1" ]]; then
-    echo "new owned draft release cannot be resolved uniquely" >&2
-    return 1
-  fi
-  release_id="$(jq -er '.[0].id' <<<"${matching_releases}")"
+  release_id="$(resolve_owned_draft 30)" || return 1
   echo "release_id=${release_id}" >>"${GITHUB_OUTPUT}"
 }
 
@@ -215,24 +231,9 @@ publish_release() {
 }
 
 cleanup_release() {
-  local release_id="${requested_release_id}" releases_json matching_releases release_json
+  local release_id="${requested_release_id}" release_json
   if [[ ! "${release_id}" =~ ^[0-9]+$ ]]; then
-    releases_json="$(list_releases 2>/dev/null)" || return 0
-    matching_releases="$(jq -c \
-      --arg tag "${RELEASE_TAG}" \
-      --arg sha "${GITHUB_SHA}" \
-      --arg owner "${owner_marker}" \
-      --arg run "${run_marker}" '
-        [.[][] | select(
-          .tag_name == $tag
-          and .target_commitish == $sha
-          and .draft == true
-          and ((.body // "") | contains($owner))
-          and ((.body // "") | contains($run))
-        )]
-      ' <<<"${releases_json}")"
-    [[ "$(jq -r 'length' <<<"${matching_releases}")" == "1" ]] || return 0
-    release_id="$(jq -er '.[0].id' <<<"${matching_releases}")" || return 0
+    release_id="$(resolve_owned_draft 5 2>/dev/null)" || return 0
   fi
   release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}" 2>/dev/null)" || return 0
   if jq -e \

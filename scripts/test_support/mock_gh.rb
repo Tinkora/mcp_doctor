@@ -63,8 +63,17 @@ when "api"
     state["release_list_reads"] = state.fetch("release_list_reads", 0) + 1
     if state["mutate_release_after_first_list"] && state.fetch("release_list_reads") == 1
       state.fetch("releases").fetch(0)["body"] = "Created manually after listing"
+      puts serialized_payload
+    else
+      visible_payload = payload
+      if state.fetch("hide_created_release_lists", 0).positive? && state["created_release_id"]
+        visible_payload = payload.reject do |release|
+          release.fetch("id") == state.fetch("created_release_id")
+        end
+        state["hide_created_release_lists"] -= 1
+      end
+      puts JSON.generate(slurp ? [visible_payload] : visible_payload)
     end
-    puts serialized_payload
   in ["GET", %r{/releases/(\d+)$}]
     release_id = Regexp.last_match(1).to_i
     release = state.fetch("releases").find { |item| item.fetch("id") == release_id }
@@ -123,6 +132,7 @@ when "release"
     end
   }
   state.fetch("releases") << release
+  state["created_release_id"] = release_id
   abort("simulated upload failure") if state["create_failure"] == "after_create"
 
   puts "https://example.test/releases/#{release_id}"
