@@ -64,6 +64,11 @@ jobs:
       - name: Test release workflow contract
         run: ruby scripts/test_release_workflow.rb
 
+      - name: Test release publishing logic
+        run: |
+          shellcheck scripts/publish_release.sh
+          ruby scripts/test_publish_release.rb
+
       - name: Install supply-chain tools
         run: |
           rustup toolchain install 1.88.0 --profile minimal --no-self-update
