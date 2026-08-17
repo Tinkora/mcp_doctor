@@ -19,7 +19,7 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 工作目录无效、环境变量占位符未解析。这些问题通常发生在 MCP Inspector 或
 客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.5` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.6` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -40,6 +40,11 @@ Claude Code 的 [#54803](https://github.com/anthropics/claude-code/issues/54803)
 [#77325](https://github.com/anthropics/claude-code/issues/77325) 和
 [#58919](https://github.com/anthropics/claude-code/issues/58919) 则显示
 `~/.claude.json` 中的无效或嵌套条目会破坏 MCP 配置。
+Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
+[#13464](https://github.com/openai/codex/issues/13464) 显示错误语法或重复 MCP table
+会使 `config.toml` 无法使用；[#26011](https://github.com/openai/codex/issues/26011)
+和 [#33104](https://github.com/openai/codex/issues/33104) 则报告过期路径和找不到 MCP
+命令。
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -67,13 +72,14 @@ cargo install --path . --locked
 mcp-doctor ~/.cursor/mcp.json
 ```
 
-没有路径时，工具检查当前工作区以及当前用户已存在的 Claude Code、Claude Desktop、
-Cline、Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库级发现包括
-`.devcontainer/devcontainer.json`、`.vscode/mcp.json`、`.mcp.json`、
-`.github/mcp.json`、`.github/mcp-config.json` 和 `.cursor/mcp.json`；用户级发现
-包括 Claude Code 的 `~/.claude.json`、Copilot CLI 的
-`~/.copilot/mcp-config.json` 以及当前平台的 VS Code 用户级 `mcp.json`。对于
-Claude Code，MCP Doctor 只检查顶层 user server 和属于当前工作区的 local server。
+没有路径时，工具检查当前工作区以及当前用户已存在的 Codex、Claude Code、Claude
+Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库级发现包括
+`.codex/config.toml`、`.devcontainer/devcontainer.json`、`.vscode/mcp.json`、
+`.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json` 和
+`.cursor/mcp.json`；用户级发现包括 Codex 的 `~/.codex/config.toml`、Claude Code
+的 `~/.claude.json`、Copilot CLI 的 `~/.copilot/mcp-config.json` 以及当前平台的
+VS Code 用户级 `mcp.json`。对于 Claude Code，MCP Doctor 只检查顶层 user server
+和属于当前工作区的 local server。
 
 ```bash
 mcp-doctor
@@ -106,7 +112,7 @@ Doctor 不会替客户端选择胜出定义。
 
 ## 支持的配置
 
-MVP 读取 JSON 和 JSONC（允许注释与尾逗号）：
+MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 
 - 顶层为 `mcpServers` map（Claude Desktop、Cline 风格）；
 - 顶层为 `servers` map（VS Code 风格）；
@@ -116,23 +122,31 @@ MVP 读取 JSON 和 JSONC（允许注释与尾逗号）：
 - `~/.claude.json` 顶层 `mcpServers` 中的 Claude Code user server，以及
   `projects[workspace].mcpServers` 中当前工作区的 local server，结构依据
   [Claude Code 官方 scope 文档](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence)；
+- `~/.codex/config.toml` 和 `.codex/config.toml` 中
+  `[mcp_servers.<name>]` 下的 Codex 用户级与当前工作区 server，结构依据
+  [Codex 官方 MCP 文档](https://developers.openai.com/codex/mcp/)；
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
+- 跳过 Codex `enabled = false` server。`env_vars` 条目可以是名称，或
+  `{ name, source = "local" | "remote" }` table；工具会验证结构，但不会从进程
+  环境查找或输出其中命名的值。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
   也不会被展开。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会被报告，但不会套用某个
   客户端专有的优先级规则。
 
 带 `url`、HTTP、SSE 或其他非 stdio `type` 的远程条目会报告不支持，不会发起连接。
-在有独立需求和兼容性证据前，YAML、TOML、MCP catalog、协议握手和 server 执行均不在范围内。
+plugin 提供的 Codex MCP server 因顶层用户配置中没有启动命令而被忽略。在有独立需求
+和兼容性证据前，YAML、MCP catalog、协议握手和 server 执行均不在范围内。
 
 ## 安全与隐私
 
-MCP Doctor 默认只读。它读取指定 JSON 和文件元数据，并读取进程 `PATH` 来检查裸命令
-可发现性。它不会启动进程、发起网络请求、从进程环境中读取占位符对应的值，也不会在
-报告中包含配置的环境变量值。占位符诊断使用通用消息，不回显占位符 token；VS Code 的
-`${input:name}` 引用因其值由客户端提供而豁免，不会读取进程环境。环境变量 key 和 server
-名称可能作为位置出现，但 human 输出会转义终端控制字符。读取 `~/.claude.json` 时会忽略
-当前工作区之外的 project 条目。分享配置前请先移除 secret。
+MCP Doctor 默认只读。它读取指定 JSON、JSONC、Codex TOML 和文件元数据，并读取进程
+`PATH` 来检查裸命令可发现性。它不会启动进程、发起网络请求、从进程环境中读取占位符
+或 Codex `env_vars` 对应的值，也不会在报告中包含配置的环境变量值。占位符诊断使用
+通用消息，不回显占位符 token；VS Code 的 `${input:name}` 引用因其值由客户端提供而
+豁免，不会读取进程环境。环境变量 key 和 server 名称可能作为位置出现，但 human 输出
+会转义终端控制字符。读取 `~/.claude.json` 时会忽略当前工作区之外的 project 条目。
+分享配置前请先移除 secret。
 
 ## 与 MCP Inspector 的边界
 
@@ -150,8 +164,9 @@ cargo clippy --all-targets --locked -- -D warnings
 ```
 
 测试覆盖支持的配置封装、JSONC 注释和尾逗号、当前进程 PATH 与 `PATHEXT`、确定和客户端
-相关的路径诊断、占位符脱敏、VS Code 输入引用、终端安全输出、不支持的传输、坏输入、
-Claude Code user/local scope 选择、JSON 路径编码、CLI 退出码和“不执行命令”边界。
+相关的路径诊断、占位符脱敏、VS Code 输入引用、终端安全输出、不支持的传输、Codex
+TOML 解析与发现、坏输入、Claude Code user/local scope 选择、JSON 路径编码、CLI
+退出码和“不执行命令”边界。
 
 请阅读[产品规格](docs/PRODUCT_SPEC.zh-CN.md)了解证据门槛、发现路径和停止条件；修改前请阅读
 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)、

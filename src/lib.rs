@@ -80,6 +80,8 @@ pub enum DoctorError {
     },
     #[error("invalid JSON or JSONC in {path}: {message}")]
     InvalidJson { path: PathBuf, message: String },
+    #[error("invalid TOML in {path}: {message}")]
+    InvalidToml { path: PathBuf, message: String },
     #[error("unsupported MCP configuration in {path}: {message}")]
     UnsupportedConfig { path: PathBuf, message: String },
     #[error("invalid server entry {server} in {path}: {message}")]
@@ -187,7 +189,7 @@ pub fn annotate_server_name_conflicts(files: &mut [FileReport]) {
     }
 }
 
-/// Inspect one JSON configuration file without launching any configured command.
+/// Inspect one configuration file without launching any configured command.
 pub fn inspect_file(path: &Path, context: &CheckContext) -> Result<FileReport, DoctorError> {
     inspect_file_with_workspace(path, context, None)
 }
@@ -211,17 +213,32 @@ fn inspect_file_with_workspace(
         path: path.to_path_buf(),
         source,
     })?;
-    let text = String::from_utf8(bytes).map_err(|source| DoctorError::InvalidJson {
-        path: path.to_path_buf(),
-        message: source.to_string(),
-    })?;
-    if contains_unsupported_single_quote(&text) {
+    let text = String::from_utf8(bytes)
+        .map_err(|source| invalid_syntax_error(path, source.to_string()))?;
+    let document = parse_document(path, &text)?;
+    inspect_document(path, &document, context, workspace)
+}
+
+fn parse_document(path: &Path, text: &str) -> Result<Value, DoctorError> {
+    if is_toml_config(path) {
+        let document =
+            toml::from_str::<toml::Table>(text).map_err(|source| DoctorError::InvalidToml {
+                path: path.to_path_buf(),
+                message: sanitized_toml_error_message(text, &source),
+            })?;
+        return serde_json::to_value(document).map_err(|source| DoctorError::InvalidToml {
+            path: path.to_path_buf(),
+            message: source.to_string(),
+        });
+    }
+
+    if contains_unsupported_single_quote(text) {
         return Err(DoctorError::InvalidJson {
             path: path.to_path_buf(),
             message: "single-quoted strings are not valid JSONC".to_string(),
         });
     }
-    let document: Value = jsonc_parser::parse_to_serde_value(&text, &jsonc_parse_options())
+    jsonc_parser::parse_to_serde_value(text, &jsonc_parse_options())
         .map_err(|source| DoctorError::InvalidJson {
             path: path.to_path_buf(),
             message: source.to_string(),
@@ -229,8 +246,47 @@ fn inspect_file_with_workspace(
         .ok_or_else(|| DoctorError::InvalidJson {
             path: path.to_path_buf(),
             message: "configuration is empty".to_string(),
-        })?;
-    inspect_document(path, &document, context, workspace)
+        })
+}
+
+fn sanitized_toml_error_message(text: &str, source: &toml::de::Error) -> String {
+    let Some(span) = source.span() else {
+        return source.message().to_string();
+    };
+    let mut line = 1;
+    let mut column = 1;
+    for (offset, character) in text.char_indices() {
+        if offset >= span.start {
+            break;
+        }
+        if character == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    format!("{} at line {line}, column {column}", source.message())
+}
+
+fn invalid_syntax_error(path: &Path, message: String) -> DoctorError {
+    if is_toml_config(path) {
+        DoctorError::InvalidToml {
+            path: path.to_path_buf(),
+            message,
+        }
+    } else {
+        DoctorError::InvalidJson {
+            path: path.to_path_buf(),
+            message,
+        }
+    }
+}
+
+fn is_toml_config(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("toml"))
 }
 
 fn jsonc_parse_options() -> jsonc_parser::ParseOptions {
@@ -319,6 +375,19 @@ fn inspect_document(
                     server: name.clone(),
                     message: "server entry must be an object".to_string(),
                 })?;
+            if is_toml_config(path) {
+                match server.get("enabled") {
+                    Some(Value::Bool(false)) => continue,
+                    None | Some(Value::Bool(true)) => {}
+                    Some(_) => {
+                        return Err(DoctorError::InvalidServer {
+                            path: path.to_path_buf(),
+                            server: name.clone(),
+                            message: "enabled must be a boolean".to_string(),
+                        });
+                    }
+                }
+            }
             let transport = match server.get("type") {
                 None => "stdio",
                 Some(Value::String(value)) => value.as_str(),
@@ -355,6 +424,9 @@ fn inspect_document(
             let args = parse_string_array(server.get("args"), path, name, "args")?;
             let cwd = parse_optional_string(server.get("cwd"), path, name, "cwd")?;
             let env_map = parse_string_map(server.get("env"), path, name)?;
+            if is_toml_config(path) {
+                validate_codex_env_vars(server.get("env_vars"), path, name)?;
+            }
             report.servers.push(ServerReport {
                 name: name.clone(),
                 transport: "stdio",
@@ -379,6 +451,12 @@ fn server_maps<'a>(
     workspace: Option<&Path>,
 ) -> Result<Vec<&'a Map<String, Value>>, DoctorError> {
     let mut maps = Vec::new();
+    if is_toml_config(path) {
+        if let Some(value) = root.get("mcp_servers") {
+            maps.push(object_map(value, path, "mcp_servers")?);
+        }
+        return Ok(maps);
+    }
     if let Some(value) = root.get("mcpServers") {
         maps.push(object_map(value, path, "mcpServers")?);
     } else if let Some(value) = root.get("servers") {
@@ -543,6 +621,45 @@ fn parse_string_array(
                 })
         })
         .collect()
+}
+
+fn validate_codex_env_vars(
+    value: Option<&Value>,
+    path: &Path,
+    server: &str,
+) -> Result<(), DoctorError> {
+    let Some(value) = value else { return Ok(()) };
+    let array = value.as_array().ok_or_else(|| DoctorError::InvalidServer {
+        path: path.to_path_buf(),
+        server: server.to_string(),
+        message: "env_vars must be an array".to_string(),
+    })?;
+    for (index, item) in array.iter().enumerate() {
+        if item.is_string() {
+            continue;
+        }
+        let table = item.as_object().ok_or_else(|| DoctorError::InvalidServer {
+            path: path.to_path_buf(),
+            server: server.to_string(),
+            message: format!("env_vars[{index}] must be a string or a name/source table"),
+        })?;
+        if !table.get("name").is_some_and(Value::is_string) {
+            return Err(DoctorError::InvalidServer {
+                path: path.to_path_buf(),
+                server: server.to_string(),
+                message: format!("env_vars[{index}].name must be a string"),
+            });
+        }
+        let source = table.get("source").and_then(Value::as_str);
+        if !matches!(source, Some("local" | "remote")) {
+            return Err(DoctorError::InvalidServer {
+                path: path.to_path_buf(),
+                server: server.to_string(),
+                message: format!("env_vars[{index}].source must be local or remote"),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn parse_optional_string(
@@ -880,6 +997,7 @@ fn discover_paths_from_roots(
     app_data: Option<&Path>,
 ) -> Vec<PathBuf> {
     let mut candidates = vec![
+        workspace.join(".codex/config.toml"),
         workspace.join(".devcontainer/devcontainer.json"),
         workspace.join(".vscode/mcp.json"),
         workspace.join(".mcp.json"),
@@ -889,6 +1007,7 @@ fn discover_paths_from_roots(
     ];
     if let Some(home) = home {
         candidates.extend([
+            home.join(".codex/config.toml"),
             home.join(".claude.json"),
             home.join(".copilot/mcp-config.json"),
             home.join(".cursor/mcp.json"),
@@ -964,6 +1083,241 @@ mod tests {
         }));
         let serialized = serde_json::to_string(&report).expect("serialize report");
         assert!(!serialized.contains("super-secret"));
+    }
+
+    #[test]
+    fn parses_codex_stdio_servers_without_exposing_environment_values() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        let missing_cwd = serde_json::to_string(
+            &dir.path()
+                .join("missing-mcp-doctor-directory")
+                .to_string_lossy(),
+        )
+        .expect("encode missing cwd");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo]
+                command = "missing-codex-command"
+                args = ["--token", "${API_KEY}"]
+                cwd = __MISSING_CWD__
+                env_vars = [
+                    "PASSTHROUGH_SECRET",
+                    { name = "REMOTE_SECRET", source = "remote" },
+                ]
+
+                [mcp_servers.demo.env]
+                API_KEY = "super-secret"
+            "#
+            .replace("__MISSING_CWD__", &missing_cwd),
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::with_path(Vec::<PathBuf>::new()))
+            .expect("inspect Codex config");
+
+        assert_eq!(report.servers.len(), 1);
+        assert_eq!(report.servers[0].name, "demo");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CommandNotFound)
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CwdNotFound)
+        );
+        assert!(report.findings.iter().any(|finding| {
+            finding.code == FindingCode::Placeholder
+                && !finding.message.contains("API_KEY")
+                && !finding.message.contains("super-secret")
+        }));
+        let serialized = serde_json::to_string(&report).expect("serialize report");
+        assert!(!serialized.contains("super-secret"));
+        assert!(!serialized.contains("PASSTHROUGH_SECRET"));
+        assert!(!serialized.contains("REMOTE_SECRET"));
+    }
+
+    #[test]
+    fn rejects_invalid_codex_env_vars_without_echoing_values() {
+        let cases = [
+            ("\"never-print-this\"", "env_vars must be an array"),
+            (
+                "[42]",
+                "env_vars[0] must be a string or a name/source table",
+            ),
+            (
+                "[{ source = \"remote\" }]",
+                "env_vars[0].name must be a string",
+            ),
+            (
+                "[{ name = \"TOKEN\" }]",
+                "env_vars[0].source must be local or remote",
+            ),
+            (
+                "[{ name = \"TOKEN\", source = \"never-print-this\" }]",
+                "env_vars[0].source must be local or remote",
+            ),
+        ];
+
+        for (env_vars, expected_message) in cases {
+            let dir = tempdir().expect("tempdir");
+            let config = dir.path().join("config.toml");
+            let contents =
+                format!("[mcp_servers.demo]\ncommand = \"node\"\nenv_vars = {env_vars}\n");
+            fs::write(&config, contents).expect("write config");
+
+            let error = inspect_file(&config, &CheckContext::default())
+                .expect_err("invalid env_vars declaration");
+            let message = error.to_string();
+
+            assert!(message.contains(expected_message), "{message}");
+            assert!(!message.contains("never-print-this"));
+        }
+    }
+
+    #[test]
+    fn skips_disabled_codex_servers_and_warns_about_remote_servers() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.disabled]
+                command = "missing-disabled-command"
+                enabled = false
+
+                [mcp_servers.remote]
+                url = "https://example.test/mcp"
+
+                [mcp_servers.active]
+                command = "missing-active-command"
+            "#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::with_path(Vec::<PathBuf>::new()))
+            .expect("inspect Codex config");
+
+        assert_eq!(report.servers.len(), 1);
+        assert_eq!(report.servers[0].name, "active");
+        assert!(report.findings.iter().any(|finding| {
+            finding.code == FindingCode::UnsupportedTransport
+                && finding.server.as_deref() == Some("remote")
+        }));
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| finding.server.as_deref() != Some("disabled"))
+        );
+    }
+
+    #[test]
+    fn rejects_non_boolean_codex_server_enablement() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo]
+                command = "node"
+                enabled = "sometimes"
+            "#,
+        )
+        .expect("write config");
+
+        let error =
+            inspect_file(&config, &CheckContext::default()).expect_err("invalid enabled value");
+
+        assert!(error.to_string().contains("enabled must be a boolean"));
+    }
+
+    #[test]
+    fn rejects_duplicate_codex_server_tables_as_invalid_toml() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo]
+                command = "first"
+
+                [mcp_servers.demo]
+                command = "second"
+            "#,
+        )
+        .expect("write config");
+
+        let error = inspect_file(&config, &CheckContext::default()).expect_err("invalid TOML");
+
+        assert!(error.to_string().contains("invalid TOML"));
+    }
+
+    #[test]
+    fn rejects_unescaped_windows_paths_as_invalid_toml() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo]
+                command = "powershell"
+                args = ["C:\codex\server.ps1"]
+            "#,
+        )
+        .expect("write config");
+
+        let error = inspect_file(&config, &CheckContext::default()).expect_err("invalid TOML");
+
+        assert!(error.to_string().contains("invalid TOML"));
+    }
+
+    #[test]
+    fn invalid_toml_errors_do_not_echo_source_lines() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo.env]
+                TOKEN = "never-print-this\q"
+            "#,
+        )
+        .expect("write config");
+
+        let error = inspect_file(&config, &CheckContext::default()).expect_err("invalid TOML");
+        let message = error.to_string();
+
+        assert!(message.contains("invalid TOML"));
+        assert!(message.contains("line"));
+        assert!(!message.contains("never-print-this"));
+    }
+
+    #[test]
+    fn accepts_codex_config_without_top_level_mcp_servers() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                model = "gpt-5.2-codex"
+
+                [plugins."sample@test".mcp_servers.sample]
+                enabled = true
+            "#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::default())
+            .expect("inspect Codex config without MCP servers");
+
+        assert!(report.servers.is_empty());
+        assert!(report.findings.is_empty());
     }
 
     #[test]
@@ -1401,6 +1755,7 @@ mod tests {
         let app_data = tempdir().expect("app data");
 
         for relative in [
+            ".codex/config.toml",
             ".devcontainer/devcontainer.json",
             ".vscode/mcp.json",
             ".mcp.json",
@@ -1417,6 +1772,9 @@ mod tests {
         fs::write(&copilot, "{}").expect("write Copilot config");
         let claude_code = home.path().join(".claude.json");
         fs::write(&claude_code, "{}").expect("write Claude Code config");
+        let codex_user = home.path().join(".codex/config.toml");
+        fs::create_dir_all(codex_user.parent().expect("parent")).expect("create parent");
+        fs::write(&codex_user, "").expect("write Codex config");
         let vscode_user = home.path().join(".config/Code/User/mcp.json");
         fs::create_dir_all(vscode_user.parent().expect("parent")).expect("create parent");
         fs::write(&vscode_user, "{}").expect("write VS Code config");
@@ -1427,12 +1785,14 @@ mod tests {
         let paths =
             discover_paths_from_roots(workspace.path(), Some(home.path()), Some(app_data.path()));
 
-        assert_eq!(paths.len(), 10);
+        assert_eq!(paths.len(), 12);
+        assert!(paths.contains(&workspace.path().join(".codex/config.toml")));
         assert!(paths.contains(&workspace.path().join(".devcontainer/devcontainer.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp-config.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp.json")));
         assert!(paths.contains(&copilot));
         assert!(paths.contains(&claude_code));
+        assert!(paths.contains(&codex_user));
         assert!(paths.contains(&vscode_user));
         assert!(paths.contains(&windows_vscode_user));
     }

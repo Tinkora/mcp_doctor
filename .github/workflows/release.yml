@@ -8,7 +8,7 @@ on:
       release_tag:
         description: Release version to validate without publishing
         required: true
-        default: v0.1.5
+        default: v0.1.6
         type: string
 
 permissions:
@@ -315,10 +315,7 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Reverify tag and publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+      - name: Reverify release assets and tag
         run: |
           set -euo pipefail
           [[ "$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" == "${GITHUB_SHA}" ]] || {
@@ -326,29 +323,29 @@ jobs:
             exit 1
           }
           (cd release-assets && sha256sum --check --strict -- ./*.sha256)
-          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | LC_ALL=C sort -z)
-          [[ "${#assets[@]}" == "10" ]] || {
+          [[ "$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')" == "10" ]] || {
             echo "unexpected release asset count" >&2
             exit 1
           }
-          release_id="$(gh api \
-            --method POST \
-            "repos/${GH_REPO}/releases" \
-            -f tag_name="${RELEASE_TAG}" \
-            -f target_commitish="${GITHUB_SHA}" \
-            -f name="MCP Doctor ${RELEASE_TAG}" \
-            -F draft=true \
-            -F prerelease=false \
-            -F generate_release_notes=true \
-            --jq '.id')"
-          release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
-          test "$(jq -r '.tag_name' <<< "${release_json}")" = "${RELEASE_TAG}"
-          test "$(jq -r '.draft' <<< "${release_json}")" = true
-          gh release upload "${RELEASE_TAG}" "${assets[@]}"
-          release_json="$(gh api "repos/${GH_REPO}/releases/${release_id}")"
-          test "$(jq -r '.assets | length' <<< "${release_json}")" = 10
-          gh api \
-            --method PATCH \
-            "repos/${GH_REPO}/releases/${release_id}" \
-            -F draft=false \
-            --jq '.draft' | grep -qx false
+
+      - name: Create owned GitHub Release draft
+        id: create_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/publish_release.sh create release-assets
+
+      - name: Publish verified GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create_release.outputs.release_id }}
+        run: bash scripts/publish_release.sh publish release-assets "${RELEASE_ID}"
+
+      - name: Remove failed owned release draft
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create_release.outputs.release_id }}
+        run: bash scripts/publish_release.sh cleanup release-assets "${RELEASE_ID:-}"

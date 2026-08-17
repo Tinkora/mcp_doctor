@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx` or
 Node binary on `PATH`, an invalid working directory, and unresolved environment
 placeholders.
 
-> Status: Alpha (`v0.1.5` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.6` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -49,6 +49,12 @@ The same startup failures recur in real client reports:
   while [#77325](https://github.com/anthropics/claude-code/issues/77325) and
   [#58919](https://github.com/anthropics/claude-code/issues/58919) show invalid
   and nested entries in `~/.claude.json` disrupting MCP configuration.
+- Codex [#37616](https://github.com/openai/codex/issues/37616) and
+  [#13464](https://github.com/openai/codex/issues/13464) show malformed or
+  duplicate MCP tables making `config.toml` unusable, while
+  [#26011](https://github.com/openai/codex/issues/26011) and
+  [#33104](https://github.com/openai/codex/issues/33104) report stale paths and
+  missing MCP commands.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -78,11 +84,12 @@ mcp-doctor ~/.cursor/mcp.json
 ```
 
 With no path, MCP Doctor checks existing conventional files in the current
-workspace and the current user's known Claude Code, Claude Desktop, Cline,
-Cursor, VS Code, and GitHub Copilot CLI paths. Repository discovery includes
-`.devcontainer/devcontainer.json`, `.vscode/mcp.json`, `.mcp.json`,
-`.github/mcp.json`, `.github/mcp-config.json`, and `.cursor/mcp.json`; user
-discovery includes Claude Code's `~/.claude.json`, Copilot CLI's
+workspace and the current user's known Codex, Claude Code, Claude Desktop,
+Cline, Cursor, VS Code, and GitHub Copilot CLI paths. Repository discovery
+includes `.codex/config.toml`, `.devcontainer/devcontainer.json`,
+`.vscode/mcp.json`, `.mcp.json`, `.github/mcp.json`,
+`.github/mcp-config.json`, and `.cursor/mcp.json`; user discovery includes
+Codex's `~/.codex/config.toml`, Claude Code's `~/.claude.json`, Copilot CLI's
 `~/.copilot/mcp-config.json`, and the platform's VS Code user `mcp.json`. For
 Claude Code, MCP Doctor inspects top-level user servers and only the local
 servers belonging to the current workspace.
@@ -123,7 +130,8 @@ Cursor, and VS Code resolve every relative path the same way.
 
 ## Supported configuration
 
-The MVP reads JSON and JSONC (JSON with comments and trailing commas):
+The MVP reads JSON, JSONC (JSON with comments and trailing commas), and Codex
+TOML:
 
 - a top-level `mcpServers` map (Claude Desktop and Cline-style files);
 - a top-level `servers` map (VS Code-style entries);
@@ -133,31 +141,40 @@ The MVP reads JSON and JSONC (JSON with comments and trailing commas):
 - Claude Code user servers at top-level `mcpServers` and current-workspace local
   servers under `projects[workspace].mcpServers` in `~/.claude.json`, following
   the [official Claude Code scope documentation](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence);
+- Codex user and current-workspace servers under `[mcp_servers.<name>]` in
+  `~/.codex/config.toml` and `.codex/config.toml`, following the
+  [official Codex MCP documentation](https://developers.openai.com/codex/mcp/);
 - stdio fields `command`, optional string-array `args`, optional string `cwd`,
   and optional string-map `env`.
+- Codex `enabled = false` servers are skipped. `env_vars` entries may be names
+  or `{ name, source = "local" | "remote" }` tables. Their structure is
+  validated, but the named process values are never looked up or emitted.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
   process-environment placeholders. They are never expanded.
 - Exact and case-only duplicate stdio server names across inspected entries are
   reported without applying a client-specific precedence rule.
 
 Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are reported as
-unsupported and are not contacted. YAML, TOML, MCP catalog files, protocol
-handshakes, and server execution are out of scope until independent demand and
-compatibility evidence justify them.
+unsupported and are not contacted. Plugin-provided Codex MCP servers are
+ignored because their launch commands are not present in top-level user
+configuration. YAML, MCP catalog files, protocol handshakes, and server
+execution are out of scope until independent demand and compatibility evidence
+justify them.
 
 ## Safety and privacy
 
-MCP Doctor is read-only by default. It reads the selected JSON file and file
-metadata, and reads the process `PATH` only to test bare command discoverability.
-It does not spawn a process, perform a network request, retrieve a matching
-value from the process environment, or include configured environment values in
-its reports. Placeholder diagnostics are generic and do not echo the placeholder
-token. VS Code `${input:name}` references are exempt because their values are
-provided by the client, not read from the process environment. Environment keys
-and server names can appear as locations, while terminal control characters in
-human output are escaped. When reading `~/.claude.json`, project entries other
-than the current workspace are ignored. Remove secrets before sharing a config
-file.
+MCP Doctor is read-only by default. It reads the selected JSON, JSONC, or Codex
+TOML file and file metadata, and reads the process `PATH` only to test bare
+command discoverability. It does not spawn a process, perform a network
+request, retrieve a matching value from the process environment, or include
+configured environment values in its reports. Placeholder diagnostics are
+generic and do not echo the placeholder token. VS Code `${input:name}`
+references are exempt because their values are provided by the client, not read
+from the process environment. Codex `env_vars` values are not read. Environment
+keys and server names can appear as locations, while terminal control
+characters in human output are escaped. When reading `~/.claude.json`, project
+entries other than the current workspace are ignored. Remove secrets before
+sharing a config file.
 
 ## MCP Inspector boundary
 
@@ -181,8 +198,8 @@ The test suite covers supported envelopes, JSONC comments and trailing commas,
 current-process PATH and `PATHEXT`, deterministic and client-dependent path
 diagnostics, placeholder redaction, VS Code input references, terminal-safe
 output, Claude Code user/local scope selection, unsupported transports,
-malformed input, JSON path encoding, CLI exit codes, and the no-execution
-boundary.
+Codex TOML parsing and discovery, malformed input, JSON path encoding, CLI exit
+codes, and the no-execution boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),

@@ -80,6 +80,65 @@ fn json_output_is_structured_and_redacted() {
 }
 
 #[test]
+fn invalid_toml_errors_do_not_echo_source_lines_in_human_output() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.demo.env]
+            TOKEN = "never-print-this\q"
+        "#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--no-discover")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(stderr.contains("invalid TOML"));
+    assert!(stderr.contains("line"));
+    assert!(!stderr.contains("never-print-this"));
+}
+
+#[test]
+fn invalid_toml_errors_do_not_echo_source_lines_in_json_output() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.demo.env]
+            TOKEN = "never-print-this\q"
+        "#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--format")
+        .arg("json")
+        .arg("--no-discover")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert!(
+        value["errors"][0]["message"]
+            .as_str()
+            .expect("error message")
+            .contains("invalid TOML")
+    );
+    assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
 fn cli_inspects_explicit_devcontainer_mcp_configuration() {
     let dir = tempdir().expect("tempdir");
     let config = dir.path().join("devcontainer.json");
@@ -147,6 +206,95 @@ fn discovery_inspects_claude_code_user_and_current_workspace_scopes() {
     assert!(stdout.contains("Server: local-server"));
     assert!(!stdout.contains("other-server"));
     assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
+fn discovery_inspects_codex_user_and_project_configs_and_reports_conflicts() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let app_data = tempdir().expect("app data");
+    let user_config = home.path().join(".codex/config.toml");
+    let project_config = workspace.path().join(".codex/config.toml");
+    fs::create_dir_all(user_config.parent().expect("user config parent"))
+        .expect("create user config parent");
+    fs::create_dir_all(project_config.parent().expect("project config parent"))
+        .expect("create project config parent");
+    fs::write(
+        &user_config,
+        r#"
+            [mcp_servers.Playwright]
+            command = "missing-user-command"
+            env = { TOKEN = "never-print-this" }
+        "#,
+    )
+    .expect("write user config");
+    fs::write(
+        &project_config,
+        r#"
+            [mcp_servers.playwright]
+            command = "missing-project-command"
+        "#,
+    )
+    .expect("write project config");
+
+    let output = command()
+        .current_dir(workspace.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("APPDATA", app_data.path())
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert_eq!(stdout.matches("server_name_conflict").count(), 2);
+    assert!(stdout.contains("Server: Playwright"));
+    assert!(stdout.contains("Server: playwright"));
+    assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
+fn codex_env_vars_never_read_or_echo_process_values() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.demo]
+            command = "missing-command"
+            env_vars = [
+                "MCP_DOCTOR_LOCAL_SENTINEL",
+                { name = "MCP_DOCTOR_REMOTE_SENTINEL", source = "remote" },
+            ]
+        "#,
+    )
+    .expect("write config");
+
+    for format in [None, Some("json")] {
+        let mut process = command();
+        process
+            .arg("--no-discover")
+            .arg(&config)
+            .env("MCP_DOCTOR_LOCAL_SENTINEL", "local-process-secret")
+            .env("MCP_DOCTOR_REMOTE_SENTINEL", "remote-process-secret");
+        if let Some(format) = format {
+            process.arg("--format").arg(format);
+        }
+        let output = process.output().expect("run");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+        let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+        for private_text in [
+            "MCP_DOCTOR_LOCAL_SENTINEL",
+            "MCP_DOCTOR_REMOTE_SENTINEL",
+            "local-process-secret",
+            "remote-process-secret",
+        ] {
+            assert!(!stdout.contains(private_text));
+            assert!(!stderr.contains(private_text));
+        }
+    }
 }
 
 #[test]
