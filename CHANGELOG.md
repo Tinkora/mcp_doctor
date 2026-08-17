@@ -6,6 +6,11 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Accept UTF-8 BOM-prefixed JSON and JSONC configuration files commonly
+  produced by Windows editors.
+
 ## [0.1.6] - 2026-08-16
 
 ### Added
