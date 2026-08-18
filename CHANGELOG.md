@@ -6,6 +6,8 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-19
+
 ### Added
 
 - Warn when a remote Codex server's `bearer_token_env_var` is absent from MCP
