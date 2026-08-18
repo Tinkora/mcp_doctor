@@ -46,6 +46,8 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 和 [#33104](https://github.com/openai/codex/issues/33104) 则报告过期路径和找不到 MCP
 命令；[#30125](https://github.com/openai/codex/issues/30125) 显示远程 server 即使配置的
 bearer token 环境变量没有进入客户端进程，仍可能看起来已经配置了认证。
+[#35448](https://github.com/openai/codex/issues/35448) 还显示已禁用的 plugin 条目仍会
+被第三方 MCP 工具发现。
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -127,8 +129,9 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
   `[mcp_servers.<name>]` 下的 Codex 用户级与当前工作区 server，结构依据
   [Codex 官方 MCP 文档](https://developers.openai.com/codex/mcp/)；
 - stdio 字段 `command`，可选字符串数组 `args`、字符串 `cwd`、字符串 map `env`。
-- 跳过 Codex `enabled = false` server。`env_vars` 条目可以是名称，或
-  `{ name, source = "local" | "remote" }` table；工具会验证结构，但不会从进程
+- 对 Codex `enabled = false` server 跳过启动检查，但给出 informational warning，
+  因为第三方 MCP 发现工具可能不会遵守 Codex 专用标记。`env_vars` 条目可以是名称，
+  或 `{ name, source = "local" | "remote" }` table；工具会验证结构，但不会从进程
   环境查找或输出其中命名的值。
 - 对远程 Codex URL 条目，`bearer_token_env_var` 必须是非空字符串。如果对应环境
   变量名称没有出现在 MCP Doctor 当前进程中，工具会给出 warning，但不会获取或

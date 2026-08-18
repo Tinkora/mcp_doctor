@@ -48,7 +48,8 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 [#33104](https://github.com/openai/codex/issues/33104) 则显示项目 scope、过期路径和
 命令不可发现问题。Codex 的 [#30125](https://github.com/openai/codex/issues/30125)
 报告远程 server 即使命名的环境变量没有进入活跃客户端进程，仍可能看起来已经配置
-bearer 认证。
+bearer 认证。Codex 的 [#35448](https://github.com/openai/codex/issues/35448) 还报告
+已禁用的 plugin 条目仍会暴露给第三方 MCP 发现工具。
 
 ## 最小可用结果
 
@@ -72,9 +73,9 @@ bearer 认证。
   `~/.codex/config.toml` 和当前工作区 `.codex/config.toml`；Codex 本身只在项目
   受信任时加载项目级配置。
 - server 字段：`command`、`args`，可选 `cwd` 和字符串 `env`。
-- 跳过 `enabled = false` 的 Codex 条目。`env_vars` 接受字符串或
-  `{ name, source = "local" | "remote" }` table；只验证声明结构，不从进程环境
-  读取其中命名的值。
+- 对 `enabled = false` 的 Codex 条目跳过启动检查，并给出互操作 informational finding。
+  `env_vars` 接受字符串或 `{ name, source = "local" | "remote" }` table；只验证声明
+  结构，不从进程环境读取其中命名的值。
 - 远程 Codex URL 条目可以声明非空 `bearer_token_env_var`。MCP Doctor 会检查该名称
   是否存在于当前进程环境中，缺失时输出脱敏 warning。
 - JSON 和 JSONC 文件允许以 UTF-8 BOM 开头；解析前会移除 BOM，诊断中不会包含它。
@@ -106,10 +107,12 @@ Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/c
 - 诊断位置可以出现环境变量 key。配置值只在内存中用于空值和占位符静态检查，不做
   插值、不用于命令查找，也不输出。
 - 不从进程环境读取 Codex `env_vars` 中命名的值，也不在 finding 中包含这些值。
-  禁用的 Codex 条目不会产生检查或跨文件名称冲突 warning。
+  禁用的 Codex 条目不会产生启动检查或跨文件名称冲突 warning。
 - 对远程 Codex `bearer_token_env_var`，只保留环境变量名称用于存在性比较；配置的名称
   和 token 值都不会输出。warning 只描述 MCP Doctor 当前进程，不宣称另行启动的 GUI
   客户端拥有相同环境。
+- 禁用的 Codex 条目不会执行 command、cwd 或 environment 检查，也不会加入 server
+  report；它的 informational finding 只提醒外部发现工具可能忽略 `enabled = false`。
 - 即使 `~/.claude.json` 同时包含已检查的 user server，也会忽略当前工作区之外的
   Claude Code project 条目。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会收到
