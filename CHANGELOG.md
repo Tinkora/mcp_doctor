@@ -6,6 +6,12 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Discover Cline CLI's reported user-level
+  `~/.cline/data/settings/cline_mcp_settings.json` path without executing any
+  configured server.
+
 ## [0.1.11] - 2026-08-19
 
 ### Changed

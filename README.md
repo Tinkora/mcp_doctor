@@ -34,7 +34,8 @@ The same startup failures recur in real client reports:
   covers Windows path handling.
 - [Cline #1948](https://github.com/cline/cline/issues/1948) and
   [#902](https://github.com/cline/cline/issues/902) report `spawn npx` and
-  startup failures.
+  startup failures; [#11671](https://github.com/cline/cline/issues/11671)
+  reports that the documented CLI path differs from the file the CLI reads.
 - [Continue #4791](https://github.com/continuedev/continue/issues/4791) and
   [#7509](https://github.com/continuedev/continue/issues/7509) report missing
   `npx` and timeouts.
@@ -98,8 +99,10 @@ includes `.codex/config.toml`, `.devcontainer/devcontainer.json`,
 `.github/mcp-config.json`, and `.cursor/mcp.json`; user discovery includes
 Codex's `~/.codex/config.toml`, Claude Code's `~/.claude.json`, Copilot CLI's
 `~/.copilot/mcp-config.json`, and the platform's VS Code user `mcp.json`. For
-Claude Code, MCP Doctor inspects top-level user servers and only the local
-servers belonging to the current workspace.
+the Cline CLI, it also discovers the reported
+`~/.cline/data/settings/cline_mcp_settings.json` path when present. For Claude
+Code, MCP Doctor inspects top-level user servers and only the local servers
+belonging to the current workspace.
 
 ```bash
 mcp-doctor
@@ -141,6 +144,9 @@ The MVP reads JSON, JSONC (JSON with comments and trailing commas), and Codex
 TOML:
 
 - a top-level `mcpServers` map (Claude Desktop and Cline-style files);
+- Cline CLI's known user-level `~/.cline/data/settings/cline_mcp_settings.json`
+  path when it exists; the path is included for discovery only and follows the
+  implementation path documented in [Cline #11671](https://github.com/cline/cline/issues/11671);
 - a top-level `servers` map (VS Code-style entries);
 - a VS Code Dev Container `customizations.vscode.mcp.servers` map in
   `.devcontainer/devcontainer.json` (see the
