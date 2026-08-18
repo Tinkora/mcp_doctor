@@ -6,6 +6,8 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-19
+
 ### Changed
 
 - Make relative `command` and `cwd` findings from Codex plugin-cache
