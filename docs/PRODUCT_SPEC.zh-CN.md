@@ -82,7 +82,9 @@ Codex 的 [#22842](https://github.com/openai/codex/issues/22842) 还报告 plugi
   是否存在于当前进程环境中，缺失时输出脱敏 warning。
 - 自动发现当前用户 Codex home 下最多 128 个匹配
   `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` 的文件。它们使用
-  现有 JSON/JSONC 解析器和静态检查，但不会假设 plugin 根目录解析规则。
+  现有 JSON/JSONC 解析器和静态检查。相对 `command` 和 `cwd` 的 finding 会说明
+  Codex plugin 根目录或客户端基准目录存在歧义，并链接 [Codex issue #22842](https://github.com/openai/codex/issues/22842)
+  作为兼容性证据。
 - JSON 和 JSONC 文件允许以 UTF-8 BOM 开头；解析前会移除 BOM，诊断中不会包含它。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目会报告明确的不支持
   传输诊断，也不会发起连接。Codex bearer token 存在性检查是唯一远程条目预检。
