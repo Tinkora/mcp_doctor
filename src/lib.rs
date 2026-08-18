@@ -9,12 +9,14 @@ use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-/// A restricted environment view used only to resolve command search paths.
-/// Configured environment values are deliberately not part of this context.
+/// A restricted environment view used to resolve command search paths and
+/// test environment-variable presence. Environment values are deliberately
+/// not part of this context.
 #[derive(Clone, Debug, Default)]
 pub struct CheckContext {
     pub path_entries: Vec<PathBuf>,
     pub command_extensions: Vec<String>,
+    pub environment_names: BTreeSet<String>,
 }
 
 impl CheckContext {
@@ -25,6 +27,7 @@ impl CheckContext {
         Self {
             path_entries: entries.into_iter().collect(),
             command_extensions: default_command_extensions(),
+            environment_names: BTreeSet::new(),
         }
     }
 
@@ -36,7 +39,17 @@ impl CheckContext {
         Self {
             path_entries: entries.into_iter().collect(),
             command_extensions: extensions.into_iter().collect(),
+            environment_names: BTreeSet::new(),
         }
+    }
+
+    pub fn with_environment_names<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.environment_names = names.into_iter().map(Into::into).collect();
+        self
     }
 
     pub fn from_system() -> Self {
@@ -55,7 +68,20 @@ impl CheckContext {
                 .filter(|extensions: &Vec<String>| !extensions.is_empty())
                 .unwrap_or_else(default_command_extensions);
         }
+        context.environment_names = env::vars_os()
+            .filter_map(|(name, _)| name.into_string().ok())
+            .collect();
         context
+    }
+
+    fn contains_environment_name(&self, name: &str) -> bool {
+        if cfg!(windows) {
+            self.environment_names
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(name))
+        } else {
+            self.environment_names.contains(name)
+        }
     }
 }
 
@@ -114,6 +140,7 @@ pub enum FindingCode {
     EmptyEnv,
     ServerNameConflict,
     UnsupportedTransport,
+    BearerTokenEnvMissing,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -405,6 +432,9 @@ fn inspect_document(
                 }
             };
             if transport != "stdio" || server.get("url").is_some() {
+                if is_toml_config(path) {
+                    inspect_codex_remote_auth(path, name, server, context, &mut report.findings)?;
+                }
                 report.findings.push(Finding {
                     code: FindingCode::UnsupportedTransport,
                     severity: Severity::Warning,
@@ -448,6 +478,47 @@ fn inspect_document(
         }
     }
     Ok(report)
+}
+
+fn inspect_codex_remote_auth(
+    path: &Path,
+    server_name: &str,
+    server: &Map<String, Value>,
+    context: &CheckContext,
+    findings: &mut Vec<Finding>,
+) -> Result<(), DoctorError> {
+    let Some(value) = server.get("bearer_token_env_var") else {
+        return Ok(());
+    };
+    let environment_name = match value {
+        Value::String(name) if !name.trim().is_empty() => name,
+        Value::String(_) => {
+            return Err(DoctorError::InvalidServer {
+                path: path.to_path_buf(),
+                server: server_name.to_string(),
+                message: "bearer_token_env_var must not be empty".to_string(),
+            });
+        }
+        _ => {
+            return Err(DoctorError::InvalidServer {
+                path: path.to_path_buf(),
+                server: server_name.to_string(),
+                message: "bearer_token_env_var must be a string".to_string(),
+            });
+        }
+    };
+
+    if !context.contains_environment_name(environment_name) {
+        findings.push(Finding {
+            code: FindingCode::BearerTokenEnvMissing,
+            severity: Severity::Warning,
+            server: Some(server_name.to_string()),
+            location: "bearer_token_env_var".to_string(),
+            message: "configured bearer-token environment variable is absent from this process; set it before starting the MCP client".to_string(),
+        });
+    }
+
+    Ok(())
 }
 
 fn server_maps<'a>(
@@ -1540,6 +1611,102 @@ mod tests {
                 .iter()
                 .any(|finding| finding.code == FindingCode::UnsupportedTransport)
         );
+    }
+
+    #[test]
+    fn warns_when_codex_remote_bearer_token_environment_name_is_missing() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.remote]
+                url = "https://example.test/mcp"
+                bearer_token_env_var = "MCP_DOCTOR_REMOTE_AUTH_SENTINEL"
+            "#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(
+            &config,
+            &CheckContext::with_path(Vec::<PathBuf>::new())
+                .with_environment_names(Vec::<String>::new()),
+        )
+        .expect("inspect config");
+
+        assert!(report.findings.iter().any(|finding| {
+            finding.code == FindingCode::BearerTokenEnvMissing
+                && finding.server.as_deref() == Some("remote")
+                && finding.location == "bearer_token_env_var"
+        }));
+        let output = serde_json::to_string(&report).expect("serialize report");
+        assert!(!output.contains("MCP_DOCTOR_REMOTE_AUTH_SENTINEL"));
+    }
+
+    #[test]
+    fn accepts_present_codex_remote_bearer_token_environment_name() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.remote]
+                url = "https://example.test/mcp"
+                bearer_token_env_var = "MCP_DOCTOR_REMOTE_AUTH_SENTINEL"
+            "#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(
+            &config,
+            &CheckContext::with_path(Vec::<PathBuf>::new())
+                .with_environment_names(["MCP_DOCTOR_REMOTE_AUTH_SENTINEL"]),
+        )
+        .expect("inspect config");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::BearerTokenEnvMissing)
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::UnsupportedTransport)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_codex_remote_bearer_token_environment_declarations() {
+        let cases = [
+            (
+                "bearer_token_env_var = \"\"",
+                "bearer_token_env_var must not be empty",
+            ),
+            (
+                "bearer_token_env_var = 42",
+                "bearer_token_env_var must be a string",
+            ),
+        ];
+
+        for (declaration, expected_message) in cases {
+            let dir = tempdir().expect("tempdir");
+            let config = dir.path().join("config.toml");
+            fs::write(
+                &config,
+                format!(
+                    "[mcp_servers.remote]\nurl = \"https://example.test/mcp\"\n{declaration}\n"
+                ),
+            )
+            .expect("write config");
+
+            let error = inspect_file(&config, &CheckContext::default())
+                .expect_err("invalid bearer token environment declaration");
+
+            assert!(error.to_string().contains(expected_message));
+        }
     }
 
     #[test]

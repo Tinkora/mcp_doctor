@@ -46,7 +46,9 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 会导致应用无法使用；[#13025](https://github.com/openai/codex/issues/13025)、
 [#26011](https://github.com/openai/codex/issues/26011) 和
 [#33104](https://github.com/openai/codex/issues/33104) 则显示项目 scope、过期路径和
-命令不可发现问题。
+命令不可发现问题。Codex 的 [#30125](https://github.com/openai/codex/issues/30125)
+报告远程 server 即使命名的环境变量没有进入活跃客户端进程，仍可能看起来已经配置
+bearer 认证。
 
 ## 最小可用结果
 
@@ -73,9 +75,11 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 - 跳过 `enabled = false` 的 Codex 条目。`env_vars` 接受字符串或
   `{ name, source = "local" | "remote" }` table；只验证声明结构，不从进程环境
   读取其中命名的值。
+- 远程 Codex URL 条目可以声明非空 `bearer_token_env_var`。MCP Doctor 会检查该名称
+  是否存在于当前进程环境中，缺失时输出脱敏 warning。
 - JSON 和 JSONC 文件允许以 UTF-8 BOM 开头；解析前会移除 BOM，诊断中不会包含它。
-- 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
-  不支持传输诊断。
+- 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目会报告明确的不支持
+  传输诊断，也不会发起连接。Codex bearer token 存在性检查是唯一远程条目预检。
 - 忽略 plugin 提供的 Codex MCP server，因为顶层用户配置中没有它们的启动命令。
 - YAML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
 
@@ -103,6 +107,9 @@ Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/c
   插值、不用于命令查找，也不输出。
 - 不从进程环境读取 Codex `env_vars` 中命名的值，也不在 finding 中包含这些值。
   禁用的 Codex 条目不会产生检查或跨文件名称冲突 warning。
+- 对远程 Codex `bearer_token_env_var`，只保留环境变量名称用于存在性比较；配置的名称
+  和 token 值都不会输出。warning 只描述 MCP Doctor 当前进程，不宣称另行启动的 GUI
+  客户端拥有相同环境。
 - 即使 `~/.claude.json` 同时包含已检查的 user server，也会忽略当前工作区之外的
   Claude Code project 条目。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会收到
@@ -132,6 +139,6 @@ stdio 和远程传输。MCP Doctor 是协议启动前的预检层，专门处理
 ## 成功与停止条件
 
 当用户无需暴露 secret 或运行 server，就能从配置中定位缺失的 `npx`/Node 路径、
-错误工作目录、Codex TOML 语法错误、未解析占位符或跨文件 server 名称冲突时，MVP
-即成功。没有独立兼容性证据时停止扩展解析器；新增客户端格式或进程执行模式前，先用
-具体 issue/discussion 反馈验证需求。
+错误工作目录、Codex TOML 语法错误、未解析占位符、缺失的 Codex 远程 bearer token
+环境声明或跨文件 server 名称冲突时，MVP 即成功。没有独立兼容性证据时停止扩展
+解析器；新增客户端格式或进程执行模式前，先用具体 issue/discussion 反馈验证需求。
