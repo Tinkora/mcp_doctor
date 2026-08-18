@@ -6,6 +6,8 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-19
+
 ### Added
 
 - Discover Cline CLI's reported user-level
