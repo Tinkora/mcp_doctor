@@ -59,6 +59,9 @@ The same startup failures recur in real client reports:
   bearer-token environment variable is absent from the client process.
   [#35448](https://github.com/openai/codex/issues/35448) shows disabled plugin
   entries remaining discoverable to third-party MCP tools.
+  [#22842](https://github.com/openai/codex/issues/22842) reports plugin-root
+  relative paths that fail when a client resolves them from another working
+  directory.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -159,6 +162,10 @@ TOML:
   string. MCP Doctor warns when that environment-variable name is absent from
   its current process without retrieving or reporting the token value or the
   configured variable name.
+- When discovering known user paths, MCP Doctor inspects up to 128
+  `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` files and
+  applies the same static checks. It does not assume plugin-root path semantics;
+  relative command and cwd findings remain warnings.
 - JSON and JSONC files may begin with a UTF-8 BOM; MCP Doctor removes it before
   parsing, matching common Windows editor output.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
@@ -169,10 +176,11 @@ TOML:
 Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are still
 reported as unsupported and are not contacted. The Codex bearer-token check is
 only an environment preflight; it does not validate authentication or protocol
-behavior. Plugin-provided Codex MCP servers are ignored because their launch
-commands are not present in top-level user configuration. YAML, MCP catalog
-files, protocol handshakes, and server execution are out of scope until
-independent demand and compatibility evidence justify them.
+behavior. Plugin manifests and lifecycle settings are not resolved; discovered
+plugin-cache `.mcp.json` files are inspected as standalone configurations only.
+Bounded plugin-cache discovery is read-only. YAML, MCP catalog files, protocol
+handshakes, and server execution are out of scope until independent demand and
+compatibility evidence justify them.
 
 ## Safety and privacy
 

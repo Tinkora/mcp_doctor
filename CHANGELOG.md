@@ -6,6 +6,11 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Discover a bounded set of Codex plugin-cache `.mcp.json` files and apply the
+  existing static, redacted diagnostics without launching plugin servers.
+
 ## [0.1.9] - 2026-08-19
 
 ### Added
