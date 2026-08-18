@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx` or
 Node binary on `PATH`, an invalid working directory, and unresolved environment
 placeholders.
 
-> Status: Alpha (`v0.1.9` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.10` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists

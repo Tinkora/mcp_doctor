@@ -6,6 +6,8 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-19
+
 ### Added
 
 - Discover a bounded set of Codex plugin-cache `.mcp.json` files and apply the
