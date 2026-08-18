@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -322,6 +323,21 @@ fn is_toml_config(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case("toml"))
 }
 
+fn is_codex_plugin_cache_config(path: &Path) -> bool {
+    if path.file_name() != Some(OsStr::new(".mcp.json")) {
+        return false;
+    }
+    let components = path
+        .components()
+        .map(|component| component.as_os_str())
+        .collect::<Vec<_>>();
+    components.windows(3).any(|window| {
+        window[0] == OsStr::new(".codex")
+            && window[1] == OsStr::new("plugins")
+            && window[2] == OsStr::new("cache")
+    })
+}
+
 fn jsonc_parse_options() -> jsonc_parser::ParseOptions {
     jsonc_parser::ParseOptions {
         allow_comments: true,
@@ -393,6 +409,7 @@ fn inspect_document(
             message: "the top-level JSON value must be an object".to_string(),
         })?;
     let server_maps = server_maps(root, path, workspace)?;
+    let plugin_cache = is_codex_plugin_cache_config(path);
 
     let mut report = FileReport {
         path: path.to_path_buf(),
@@ -483,6 +500,7 @@ fn inspect_document(
                 cwd: cwd.as_deref(),
                 env_map: &env_map,
                 context,
+                plugin_cache,
             }
             .run(&mut report.findings);
         }
@@ -800,6 +818,7 @@ struct ServerCheck<'a> {
     cwd: Option<&'a str>,
     env_map: &'a BTreeMap<String, String>,
     context: &'a CheckContext,
+    plugin_cache: bool,
 }
 
 impl ServerCheck<'_> {
@@ -813,7 +832,14 @@ impl ServerCheck<'_> {
                 "stdio server command is missing or empty",
             ));
         } else if let Some(command) = self.command {
-            check_command(self.server, command, self.cwd, self.context, findings);
+            check_command(
+                self.server,
+                command,
+                self.cwd,
+                self.context,
+                self.plugin_cache,
+                findings,
+            );
         }
         self.check_cwd(findings);
         self.check_args(findings);
@@ -833,7 +859,11 @@ impl ServerCheck<'_> {
                 Severity::Warning,
                 self.server,
                 "cwd",
-                "working directory is relative and its base depends on the client; use an absolute path for a deterministic check",
+                if self.plugin_cache {
+                    "working directory is relative; a Codex plugin root or client may provide its base; use an absolute path for a deterministic check"
+                } else {
+                    "working directory is relative and its base depends on the client; use an absolute path for a deterministic check"
+                },
             ));
             return;
         }
@@ -885,6 +915,7 @@ fn check_command(
     command: &str,
     cwd: Option<&str>,
     context: &CheckContext,
+    plugin_cache: bool,
     findings: &mut Vec<Finding>,
 ) {
     if let Some(finding) = inspect_value(command, "command", Some(server), context) {
@@ -897,12 +928,12 @@ fn check_command(
             command_path.to_path_buf()
         } else {
             let Some(cwd) = cwd else {
-                findings.push(relative_command_finding(server));
+                findings.push(relative_command_finding(server, plugin_cache));
                 return;
             };
             let cwd_path = Path::new(cwd);
             if !cwd_path.is_absolute() || placeholder_name(cwd).is_some() {
-                findings.push(relative_command_finding(server));
+                findings.push(relative_command_finding(server, plugin_cache));
                 return;
             }
             cwd_path.join(command_path)
@@ -949,13 +980,17 @@ fn check_command(
     }
 }
 
-fn relative_command_finding(server: &str) -> Finding {
+fn relative_command_finding(server: &str, plugin_cache: bool) -> Finding {
     finding(
         FindingCode::RelativeCommandPath,
         Severity::Warning,
         server,
         "command",
-        "command path is relative and its base depends on the client; use an absolute path for a deterministic check",
+        if plugin_cache {
+            "command path is relative; a Codex plugin root or client may provide its base; use an absolute path for a deterministic check"
+        } else {
+            "command path is relative and its base depends on the client; use an absolute path for a deterministic check"
+        },
     )
 }
 

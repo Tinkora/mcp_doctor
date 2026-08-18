@@ -105,7 +105,9 @@ values.
 - Discovery inspects at most 128 files matching
   `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` under the
   current user's Codex home. These files use the existing JSON/JSONC parser and
-  static checks; plugin-root path resolution is not assumed.
+  static checks. Relative `command` and `cwd` findings identify the Codex plugin
+  root/client base ambiguity documented by
+  [Codex issue #22842](https://github.com/openai/codex/issues/22842).
 - JSON and JSONC files may begin with a UTF-8 BOM; it is removed before parsing
   and never appears in diagnostics.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) receive an

@@ -265,6 +265,36 @@ fn discovery_inspects_codex_user_and_project_configs_and_reports_conflicts() {
 }
 
 #[test]
+fn plugin_cache_relative_paths_explain_plugin_root_resolution_risk() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let app_data = tempdir().expect("app data");
+    let plugin_config = home
+        .path()
+        .join(".codex/plugins/cache/example-marketplace/example-plugin/1.0.0/.mcp.json");
+    fs::create_dir_all(plugin_config.parent().expect("plugin config parent"))
+        .expect("create plugin config parent");
+    fs::write(
+        &plugin_config,
+        r#"{"mcpServers":{"plugin-server":{"command":"./server","cwd":"./bundled-mcp-server"}}}"#,
+    )
+    .expect("write plugin config");
+
+    let output = command()
+        .current_dir(workspace.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("APPDATA", app_data.path())
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("plugin root"), "{stdout}");
+    assert!(stdout.contains("client"), "{stdout}");
+}
+
+#[test]
 fn codex_env_vars_never_read_or_echo_process_values() {
     let dir = tempdir().expect("tempdir");
     let config = dir.path().join("config.toml");

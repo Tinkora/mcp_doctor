@@ -6,6 +6,13 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Make relative `command` and `cwd` findings from Codex plugin-cache
+  configurations explain the plugin-root/client base ambiguity documented in
+  Codex issue #22842, while keeping the existing warning codes and read-only
+  behavior.
+
 ## [0.1.10] - 2026-08-19
 
 ### Added

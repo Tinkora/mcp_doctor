@@ -140,7 +140,9 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
   输出 token 值，也不会输出配置的变量名称。
 - 自动发现已知用户路径时，MCP Doctor 最多检查 128 个
   `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json`，并复用相同的
-  静态检查。工具不会假设 plugin 根目录解析语义；相对 command 和 cwd 仍只给出 warning。
+  静态检查。对于这些文件中的相对 command 和 cwd，报告会明确提示其基准目录可能由
+  Codex plugin 根目录或客户端提供；该提示有 [Codex issue #22842](https://github.com/openai/codex/issues/22842)
+  的兼容性证据。
 - JSON 和 JSONC 文件可以以 UTF-8 BOM 开头；MCP Doctor 会在解析前移除它，兼容
   常见的 Windows 编辑器输出。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，

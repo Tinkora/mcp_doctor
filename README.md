@@ -164,8 +164,9 @@ TOML:
   configured variable name.
 - When discovering known user paths, MCP Doctor inspects up to 128
   `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` files and
-  applies the same static checks. It does not assume plugin-root path semantics;
-  relative command and cwd findings remain warnings.
+  applies the same static checks. Relative command and cwd findings in those
+  files explicitly warn that the Codex plugin root or client may provide the
+  base; this is grounded in [Codex issue #22842](https://github.com/openai/codex/issues/22842).
 - JSON and JSONC files may begin with a UTF-8 BOM; MCP Doctor removes it before
   parsing, matching common Windows editor output.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
