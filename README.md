@@ -54,7 +54,9 @@ The same startup failures recur in real client reports:
   duplicate MCP tables making `config.toml` unusable, while
   [#26011](https://github.com/openai/codex/issues/26011) and
   [#33104](https://github.com/openai/codex/issues/33104) report stale paths and
-  missing MCP commands.
+  missing MCP commands. [#30125](https://github.com/openai/codex/issues/30125)
+  shows a remote server appearing authenticated even when its configured
+  bearer-token environment variable is absent from the client process.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -149,6 +151,10 @@ TOML:
 - Codex `enabled = false` servers are skipped. `env_vars` entries may be names
   or `{ name, source = "local" | "remote" }` tables. Their structure is
   validated, but the named process values are never looked up or emitted.
+- For remote Codex URL entries, `bearer_token_env_var` must be a non-empty
+  string. MCP Doctor warns when that environment-variable name is absent from
+  its current process without retrieving or reporting the token value or the
+  configured variable name.
 - JSON and JSONC files may begin with a UTF-8 BOM; MCP Doctor removes it before
   parsing, matching common Windows editor output.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
@@ -156,27 +162,29 @@ TOML:
 - Exact and case-only duplicate stdio server names across inspected entries are
   reported without applying a client-specific precedence rule.
 
-Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are reported as
-unsupported and are not contacted. Plugin-provided Codex MCP servers are
-ignored because their launch commands are not present in top-level user
-configuration. YAML, MCP catalog files, protocol handshakes, and server
-execution are out of scope until independent demand and compatibility evidence
-justify them.
+Remote entries (`url`, HTTP, SSE, or another non-stdio `type`) are still
+reported as unsupported and are not contacted. The Codex bearer-token check is
+only an environment preflight; it does not validate authentication or protocol
+behavior. Plugin-provided Codex MCP servers are ignored because their launch
+commands are not present in top-level user configuration. YAML, MCP catalog
+files, protocol handshakes, and server execution are out of scope until
+independent demand and compatibility evidence justify them.
 
 ## Safety and privacy
 
 MCP Doctor is read-only by default. It reads the selected JSON, JSONC, or Codex
-TOML file and file metadata, and reads the process `PATH` only to test bare
-command discoverability. It does not spawn a process, perform a network
-request, retrieve a matching value from the process environment, or include
-configured environment values in its reports. Placeholder diagnostics are
-generic and do not echo the placeholder token. VS Code `${input:name}`
-references are exempt because their values are provided by the client, not read
-from the process environment. Codex `env_vars` values are not read. Environment
-keys and server names can appear as locations, while terminal control
-characters in human output are escaped. When reading `~/.claude.json`, project
-entries other than the current workspace are ignored. Remove secrets before
-sharing a config file.
+TOML file and file metadata, reads the process `PATH` to test bare command
+discoverability, and retains process environment names only for the Codex
+remote-auth presence check. It does not spawn a process, perform a network
+request, retrieve a matching environment value, or include configured
+environment values or bearer-token variable names in its reports. Placeholder
+diagnostics are generic and do not echo the placeholder token. VS Code
+`${input:name}` references are exempt because their values are provided by the
+client, not read from the process environment. Codex `env_vars` values are not
+read. Other environment keys and server names can appear as locations, while
+terminal control characters in human output are escaped. When reading
+`~/.claude.json`, project entries other than the current workspace are ignored.
+Remove secrets before sharing a config file.
 
 ## MCP Inspector boundary
 

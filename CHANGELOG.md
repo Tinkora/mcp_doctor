@@ -6,6 +6,12 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Warn when a remote Codex server's `bearer_token_env_var` is absent from MCP
+  Doctor's current process without connecting to the server or exposing the
+  configured variable name or token value.
+
 ## [0.1.7] - 2026-08-18
 
 ### Fixed

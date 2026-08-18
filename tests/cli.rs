@@ -298,6 +298,38 @@ fn codex_env_vars_never_read_or_echo_process_values() {
 }
 
 #[test]
+fn codex_remote_auth_preflight_never_echoes_environment_name_or_value() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.remote]
+            url = "https://example.test/mcp"
+            bearer_token_env_var = "MCP_DOCTOR_REMOTE_AUTH_SENTINEL"
+        "#,
+    )
+    .expect("write config");
+
+    for format in [None, Some("json")] {
+        let mut invocation = command();
+        invocation
+            .arg("--no-discover")
+            .env_remove("MCP_DOCTOR_REMOTE_AUTH_SENTINEL");
+        if let Some(format) = format {
+            invocation.arg("--format").arg(format);
+        }
+        let output = invocation.arg(&config).output().expect("run");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+        assert!(stdout.contains("bearer_token_env_missing"), "{stdout}");
+        assert!(!stdout.contains("MCP_DOCTOR_REMOTE_AUTH_SENTINEL"));
+        assert!(!stdout.contains("never-print-this"));
+    }
+}
+
+#[test]
 fn reports_conflicting_server_names_across_explicit_files() {
     let dir = tempdir().expect("tempdir");
     let user_config = dir.path().join("user-mcp.json");

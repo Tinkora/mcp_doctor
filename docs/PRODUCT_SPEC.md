@@ -55,7 +55,10 @@ duplicate MCP tables making the app unusable, while
 [#13025](https://github.com/openai/codex/issues/13025),
 [#26011](https://github.com/openai/codex/issues/26011), and
 [#33104](https://github.com/openai/codex/issues/33104) show project-scope,
-stale-path, and command-discovery failures.
+stale-path, and command-discovery failures. Codex
+[#30125](https://github.com/openai/codex/issues/30125) reports a remote server
+appearing to have bearer authentication configured even when the named
+environment variable is absent from the active client process.
 
 ## Smallest useful outcome
 
@@ -90,10 +93,14 @@ values.
 - Codex `enabled = false` entries are skipped. `env_vars` accepts strings and
   `{ name, source = "local" | "remote" }` tables. These declarations are
   structurally validated without reading their named process values.
+- Remote Codex URL entries may declare a non-empty `bearer_token_env_var`.
+  MCP Doctor checks whether that name exists in its current process environment
+  and emits a redacted warning when it does not.
 - JSON and JSONC files may begin with a UTF-8 BOM; it is removed before parsing
   and never appears in diagnostics.
-- Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
-  inspected; they receive an explicit unsupported-transport diagnostic.
+- Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) receive an
+  explicit unsupported-transport diagnostic and are not contacted. The Codex
+  bearer-token presence check is the only remote-entry preflight.
 - Plugin-provided Codex MCP servers are ignored because their launch command is
   not present in top-level user configuration.
 - YAML, catalog files, protocol handshakes, and remote transports are
@@ -132,6 +139,10 @@ repository-scoped configuration reports in
 - Codex variables named by `env_vars` are not read from the process environment
   and are not included in findings. Disabled Codex entries produce no checks or
   cross-file name-conflict warnings.
+- For a remote Codex `bearer_token_env_var`, only environment names are retained
+  for an existence comparison. The configured name and token value are not
+  emitted. A warning describes MCP Doctor's process and does not claim that a
+  separately launched GUI client has the same environment.
 - Claude Code project entries outside the current workspace are ignored even
   when they coexist with inspected user-scope servers in `~/.claude.json`.
 - Exact and case-only duplicate stdio server names across inspected entries
@@ -168,8 +179,9 @@ claim protocol compatibility or server correctness.
 ## Success and stop conditions
 
 The MVP is successful when a user can identify a missing `npx`/Node path, bad
-working directory, malformed Codex TOML, unresolved placeholder, or cross-file
-server name conflict without exposing a secret or running a server. Stop
-expanding the parser when a format lacks independent compatibility evidence;
-validate demand through concrete issue or discussion reports before adding
-another client format or a process execution mode.
+working directory, malformed Codex TOML, unresolved placeholder, missing Codex
+remote bearer-token environment declaration, or cross-file server name
+conflict without exposing a secret or running a server. Stop expanding the
+parser when a format lacks independent compatibility evidence; validate demand
+through concrete issue or discussion reports before adding another client
+format or a process execution mode.

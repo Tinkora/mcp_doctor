@@ -44,7 +44,8 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 [#13464](https://github.com/openai/codex/issues/13464) 显示错误语法或重复 MCP table
 会使 `config.toml` 无法使用；[#26011](https://github.com/openai/codex/issues/26011)
 和 [#33104](https://github.com/openai/codex/issues/33104) 则报告过期路径和找不到 MCP
-命令。
+命令；[#30125](https://github.com/openai/codex/issues/30125) 显示远程 server 即使配置的
+bearer token 环境变量没有进入客户端进程，仍可能看起来已经配置了认证。
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -129,6 +130,9 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 - 跳过 Codex `enabled = false` server。`env_vars` 条目可以是名称，或
   `{ name, source = "local" | "remote" }` table；工具会验证结构，但不会从进程
   环境查找或输出其中命名的值。
+- 对远程 Codex URL 条目，`bearer_token_env_var` 必须是非空字符串。如果对应环境
+  变量名称没有出现在 MCP Doctor 当前进程中，工具会给出 warning，但不会获取或
+  输出 token 值，也不会输出配置的变量名称。
 - JSON 和 JSONC 文件可以以 UTF-8 BOM 开头；MCP Doctor 会在解析前移除它，兼容
   常见的 Windows 编辑器输出。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
@@ -136,19 +140,21 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会被报告，但不会套用某个
   客户端专有的优先级规则。
 
-带 `url`、HTTP、SSE 或其他非 stdio `type` 的远程条目会报告不支持，不会发起连接。
-plugin 提供的 Codex MCP server 因顶层用户配置中没有启动命令而被忽略。在有独立需求
-和兼容性证据前，YAML、MCP catalog、协议握手和 server 执行均不在范围内。
+带 `url`、HTTP、SSE 或其他非 stdio `type` 的远程条目仍会报告不支持，也不会发起
+连接。Codex bearer token 检查只是环境预检，不验证认证或协议行为。plugin 提供的
+Codex MCP server 因顶层用户配置中没有启动命令而被忽略。在有独立需求和兼容性证据
+前，YAML、MCP catalog、协议握手和 server 执行均不在范围内。
 
 ## 安全与隐私
 
-MCP Doctor 默认只读。它读取指定 JSON、JSONC、Codex TOML 和文件元数据，并读取进程
-`PATH` 来检查裸命令可发现性。它不会启动进程、发起网络请求、从进程环境中读取占位符
-或 Codex `env_vars` 对应的值，也不会在报告中包含配置的环境变量值。占位符诊断使用
-通用消息，不回显占位符 token；VS Code 的 `${input:name}` 引用因其值由客户端提供而
-豁免，不会读取进程环境。环境变量 key 和 server 名称可能作为位置出现，但 human 输出
-会转义终端控制字符。读取 `~/.claude.json` 时会忽略当前工作区之外的 project 条目。
-分享配置前请先移除 secret。
+MCP Doctor 默认只读。它读取指定 JSON、JSONC、Codex TOML 和文件元数据，读取进程
+`PATH` 来检查裸命令可发现性，并只保留进程环境变量名称用于 Codex 远程认证存在性
+检查。它不会启动进程、发起网络请求、获取匹配的环境变量值，也不会在报告中包含配置
+的环境变量值或 bearer token 变量名称。占位符诊断使用通用消息，不回显占位符 token；
+VS Code 的 `${input:name}` 引用因其值由客户端提供而豁免，不会读取进程环境。Codex
+`env_vars` 的值不会被读取；其他环境变量 key 和 server 名称可能作为位置出现，但
+human 输出会转义终端控制字符。读取 `~/.claude.json` 时会忽略当前工作区之外的
+project 条目。分享配置前请先移除 secret。
 
 ## 与 MCP Inspector 的边界
 
