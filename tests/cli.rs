@@ -236,6 +236,16 @@ fn discovery_inspects_codex_user_and_project_configs_and_reports_conflicts() {
         "#,
     )
     .expect("write project config");
+    let plugin_config = home
+        .path()
+        .join(".codex/plugins/cache/example-marketplace/example-plugin/1.0.0/.mcp.json");
+    fs::create_dir_all(plugin_config.parent().expect("plugin config parent"))
+        .expect("create plugin config parent");
+    fs::write(
+        &plugin_config,
+        r#"{"mcpServers":{"plugin-server":{"command":"missing-plugin-command"}}}"#,
+    )
+    .expect("write plugin config");
 
     let output = command()
         .current_dir(workspace.path())
@@ -250,6 +260,7 @@ fn discovery_inspects_codex_user_and_project_configs_and_reports_conflicts() {
     assert_eq!(stdout.matches("server_name_conflict").count(), 2);
     assert!(stdout.contains("Server: Playwright"));
     assert!(stdout.contains("Server: playwright"));
+    assert!(stdout.contains("Server: plugin-server"));
     assert!(!stdout.contains("never-print-this"));
 }
 

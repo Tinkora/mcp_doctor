@@ -48,6 +48,8 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 bearer token 环境变量没有进入客户端进程，仍可能看起来已经配置了认证。
 [#35448](https://github.com/openai/codex/issues/35448) 还显示已禁用的 plugin 条目仍会
 被第三方 MCP 工具发现。
+[#22842](https://github.com/openai/codex/issues/22842) 则报告 plugin 根目录相对路径在
+客户端从其他工作目录解析时会失败。
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
@@ -136,6 +138,9 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 - 对远程 Codex URL 条目，`bearer_token_env_var` 必须是非空字符串。如果对应环境
   变量名称没有出现在 MCP Doctor 当前进程中，工具会给出 warning，但不会获取或
   输出 token 值，也不会输出配置的变量名称。
+- 自动发现已知用户路径时，MCP Doctor 最多检查 128 个
+  `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json`，并复用相同的
+  静态检查。工具不会假设 plugin 根目录解析语义；相对 command 和 cwd 仍只给出 warning。
 - JSON 和 JSONC 文件可以以 UTF-8 BOM 开头；MCP Doctor 会在解析前移除它，兼容
   常见的 Windows 编辑器输出。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
@@ -145,8 +150,9 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 
 带 `url`、HTTP、SSE 或其他非 stdio `type` 的远程条目仍会报告不支持，也不会发起
 连接。Codex bearer token 检查只是环境预检，不验证认证或协议行为。plugin 提供的
-Codex MCP server 因顶层用户配置中没有启动命令而被忽略。在有独立需求和兼容性证据
-前，YAML、MCP catalog、协议握手和 server 执行均不在范围内。
+Codex manifest 和 lifecycle 设置不会被解析；发现的 plugin cache `.mcp.json` 只会作为
+独立配置检查。plugin cache 发现有数量上限且只读。在有独立需求和兼容性证据前，YAML、
+MCP catalog、协议握手和 server 执行均不在范围内。
 
 ## 安全与隐私
 

@@ -61,6 +61,9 @@ appearing to have bearer authentication configured even when the named
 environment variable is absent from the active client process. Codex
 [#35448](https://github.com/openai/codex/issues/35448) reports disabled plugin
 entries remaining visible to third-party MCP discovery tools.
+Codex [#22842](https://github.com/openai/codex/issues/22842) reports plugin-root
+relative paths failing when a client resolves them from another working
+directory.
 
 ## Smallest useful outcome
 
@@ -99,13 +102,18 @@ values.
 - Remote Codex URL entries may declare a non-empty `bearer_token_env_var`.
   MCP Doctor checks whether that name exists in its current process environment
   and emits a redacted warning when it does not.
+- Discovery inspects at most 128 files matching
+  `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` under the
+  current user's Codex home. These files use the existing JSON/JSONC parser and
+  static checks; plugin-root path resolution is not assumed.
 - JSON and JSONC files may begin with a UTF-8 BOM; it is removed before parsing
   and never appears in diagnostics.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) receive an
   explicit unsupported-transport diagnostic and are not contacted. The Codex
   bearer-token presence check is the only remote-entry preflight.
-- Plugin-provided Codex MCP servers are ignored because their launch command is
-  not present in top-level user configuration.
+- Codex plugin manifests and lifecycle settings are not resolved. Discovered
+  plugin-cache `.mcp.json` files are inspected as standalone configurations;
+  plugin-provided merge and path semantics are out of scope.
 - YAML, catalog files, protocol handshakes, and remote transports are
   intentionally out of scope until independent compatibility evidence exists.
 
@@ -114,7 +122,8 @@ Automatic discovery is intentionally conservative: the current workspace
 `.mcp.json`, `.github/mcp.json`, `.github/mcp-config.json`, and
 `.cursor/mcp.json`, plus known user config locations for Codex, Claude Code,
 Claude Desktop, Cline, Cursor, VS Code, and GitHub Copilot CLI on the current
-platform. Codex discovery includes `~/.codex/config.toml`. Claude Code
+platform. Codex discovery includes `~/.codex/config.toml` and the bounded
+plugin-cache `.mcp.json` paths described above. Claude Code
 discovery includes `~/.claude.json`; only its top-level user scope and
 current-workspace local scope are selected. The Copilot paths are grounded in
 repository-scoped configuration reports in
@@ -156,6 +165,8 @@ repository-scoped configuration reports in
   definition a specific client version will select.
 - The default command only reads files and metadata. There is no `--run` or
   implicit process spawn in this release.
+- Plugin-cache discovery is bounded to three directory levels and 128 files; it
+  does not follow directory symlinks or connect to a plugin.
 - Human output escapes terminal control characters from configuration content.
   JSON paths that are not valid UTF-8 are represented lossily instead of
   causing a successful command to emit no JSON.

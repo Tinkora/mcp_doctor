@@ -50,6 +50,8 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 报告远程 server 即使命名的环境变量没有进入活跃客户端进程，仍可能看起来已经配置
 bearer 认证。Codex 的 [#35448](https://github.com/openai/codex/issues/35448) 还报告
 已禁用的 plugin 条目仍会暴露给第三方 MCP 发现工具。
+Codex 的 [#22842](https://github.com/openai/codex/issues/22842) 还报告 plugin 根目录
+相对路径在客户端从其他工作目录解析时失败。
 
 ## 最小可用结果
 
@@ -78,17 +80,22 @@ bearer 认证。Codex 的 [#35448](https://github.com/openai/codex/issues/35448)
   结构，不从进程环境读取其中命名的值。
 - 远程 Codex URL 条目可以声明非空 `bearer_token_env_var`。MCP Doctor 会检查该名称
   是否存在于当前进程环境中，缺失时输出脱敏 warning。
+- 自动发现当前用户 Codex home 下最多 128 个匹配
+  `.codex/plugins/cache/<marketplace>/<plugin>/<version>/.mcp.json` 的文件。它们使用
+  现有 JSON/JSONC 解析器和静态检查，但不会假设 plugin 根目录解析规则。
 - JSON 和 JSONC 文件允许以 UTF-8 BOM 开头；解析前会移除 BOM，诊断中不会包含它。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目会报告明确的不支持
   传输诊断，也不会发起连接。Codex bearer token 存在性检查是唯一远程条目预检。
-- 忽略 plugin 提供的 Codex MCP server，因为顶层用户配置中没有它们的启动命令。
+- 不解析 Codex plugin manifest 和 lifecycle 设置；发现的 plugin cache `.mcp.json` 只会
+  作为独立配置检查，plugin 提供的合并和路径语义不在范围内。
 - YAML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
 
 自动发现保持保守：当前工作区的 `.codex/config.toml`、
 `.devcontainer/devcontainer.json`、`.vscode/mcp.json`、`.mcp.json`、
 `.github/mcp.json`、`.github/mcp-config.json`、`.cursor/mcp.json`，以及当前平台上
 Codex、Claude Code、Claude Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI
-的已知用户配置路径。Codex 发现包括 `~/.codex/config.toml`。Claude Code 发现包括
+的已知用户配置路径。Codex 发现包括 `~/.codex/config.toml` 以及上面所述有界的 plugin
+cache `.mcp.json`。Claude Code 发现包括
 `~/.claude.json`，但只选择顶层 user scope 和当前工作区 local scope。
 Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
 和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。
@@ -118,6 +125,8 @@ Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/c
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会收到
   `server_name_conflict` warning；诊断不宣称特定客户端版本会选择哪个定义。
 - 默认命令只读文件和元数据；本版本没有 `--run`，也不会隐式启动进程。
+- plugin cache 发现只遍历三层目录，最多处理 128 个文件，不跟随目录 symlink，也不连接
+  plugin。
 - human 输出会转义配置内容中的终端控制字符；非 UTF-8 JSON 路径使用有损表示，避免
   命令成功却没有产生 JSON。
 

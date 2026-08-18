@@ -1092,8 +1092,9 @@ fn discover_paths_from_roots(
         workspace.join(".cursor/mcp.json"),
     ];
     if let Some(home) = home {
+        candidates.push(home.join(".codex/config.toml"));
+        candidates.extend(discover_codex_plugin_configs(home));
         candidates.extend([
-            home.join(".codex/config.toml"),
             home.join(".claude.json"),
             home.join(".copilot/mcp-config.json"),
             home.join(".cursor/mcp.json"),
@@ -1123,6 +1124,42 @@ fn discover_paths_from_roots(
         .into_iter()
         .filter(|path| path.is_file() && seen.insert(path.clone()))
         .collect()
+}
+
+const MAX_CODEX_PLUGIN_CONFIGS: usize = 128;
+
+fn discover_codex_plugin_configs(home: &Path) -> Vec<PathBuf> {
+    let cache = home.join(".codex/plugins/cache");
+    let mut configs = Vec::new();
+    for marketplace in sorted_child_directories(&cache) {
+        for plugin in sorted_child_directories(&marketplace) {
+            for version in sorted_child_directories(&plugin) {
+                let config = version.join(".mcp.json");
+                if config.is_file() {
+                    configs.push(config);
+                    if configs.len() == MAX_CODEX_PLUGIN_CONFIGS {
+                        return configs;
+                    }
+                }
+            }
+        }
+    }
+    configs
+}
+
+fn sorted_child_directories(path: &Path) -> Vec<PathBuf> {
+    let mut directories = fs::read_dir(path)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file_type = entry.file_type().ok()?;
+            file_type.is_dir().then(|| entry.path())
+        })
+        .collect::<Vec<_>>();
+    directories.sort();
+    directories
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -2009,6 +2046,11 @@ mod tests {
         let codex_user = home.path().join(".codex/config.toml");
         fs::create_dir_all(codex_user.parent().expect("parent")).expect("create parent");
         fs::write(&codex_user, "").expect("write Codex config");
+        let plugin_config = home
+            .path()
+            .join(".codex/plugins/cache/example-marketplace/example-plugin/1.0.0/.mcp.json");
+        fs::create_dir_all(plugin_config.parent().expect("parent")).expect("create plugin path");
+        fs::write(&plugin_config, "{}").expect("write plugin config");
         let vscode_user = home.path().join(".config/Code/User/mcp.json");
         fs::create_dir_all(vscode_user.parent().expect("parent")).expect("create parent");
         fs::write(&vscode_user, "{}").expect("write VS Code config");
@@ -2019,7 +2061,7 @@ mod tests {
         let paths =
             discover_paths_from_roots(workspace.path(), Some(home.path()), Some(app_data.path()));
 
-        assert_eq!(paths.len(), 12);
+        assert_eq!(paths.len(), 13);
         assert!(paths.contains(&workspace.path().join(".codex/config.toml")));
         assert!(paths.contains(&workspace.path().join(".devcontainer/devcontainer.json")));
         assert!(paths.contains(&workspace.path().join(".github/mcp-config.json")));
@@ -2027,8 +2069,27 @@ mod tests {
         assert!(paths.contains(&copilot));
         assert!(paths.contains(&claude_code));
         assert!(paths.contains(&codex_user));
+        assert!(paths.contains(&plugin_config));
         assert!(paths.contains(&vscode_user));
         assert!(paths.contains(&windows_vscode_user));
+    }
+
+    #[test]
+    fn bounds_codex_plugin_cache_discovery() {
+        let home = tempdir().expect("home");
+        for index in 0..=MAX_CODEX_PLUGIN_CONFIGS {
+            let config = home.path().join(format!(
+                ".codex/plugins/cache/example-marketplace/plugin-{index}/1.0.0/.mcp.json"
+            ));
+            fs::create_dir_all(config.parent().expect("plugin config parent"))
+                .expect("create plugin config parent");
+            fs::write(config, "{}").expect("write plugin config");
+        }
+
+        let paths = discover_codex_plugin_configs(home.path());
+
+        assert_eq!(paths.len(), MAX_CODEX_PLUGIN_CONFIGS);
+        assert!(paths.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]
