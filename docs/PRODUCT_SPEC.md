@@ -12,7 +12,9 @@ tracker ([#40](https://github.com/modelcontextprotocol/servers/issues/40),
 [#64](https://github.com/modelcontextprotocol/servers/issues/64),
 [#447](https://github.com/modelcontextprotocol/servers/issues/447)), Cline
 ([#1948](https://github.com/cline/cline/issues/1948),
-[#902](https://github.com/cline/cline/issues/902)), Continue
+[#902](https://github.com/cline/cline/issues/902), and
+[#11671](https://github.com/cline/cline/issues/11671), which reports that the
+documented Cline CLI path differs from the file the CLI reads), Continue
 ([#4791](https://github.com/continuedev/continue/issues/4791),
 [#7509](https://github.com/continuedev/continue/issues/7509)), GitHub MCP
 Server ([#1396](https://github.com/github/github-mcp-server/issues/1396)),
@@ -82,6 +84,10 @@ values.
 
 - JSON or JSONC files with a top-level `mcpServers` map (Claude Desktop,
   Cline-style).
+- Cline CLI's reported user-level path
+  `~/.cline/data/settings/cline_mcp_settings.json` is discovered when present;
+  it uses the same top-level `mcpServers` envelope and is included for path
+  discovery based on [Cline #11671](https://github.com/cline/cline/issues/11671).
 - JSON or JSONC files with a top-level `servers` map (VS Code-style entries with
   `type: "stdio"`).
 - JSON or JSONC Dev Container files with a nested

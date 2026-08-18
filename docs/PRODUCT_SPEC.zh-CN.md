@@ -9,7 +9,8 @@
 错误。MCP 官方 servers 的 [#40](https://github.com/modelcontextprotocol/servers/issues/40)、
 [#64](https://github.com/modelcontextprotocol/servers/issues/64)、
 [#447](https://github.com/modelcontextprotocol/servers/issues/447)，Cline 的
-[#1948](https://github.com/cline/cline/issues/1948)、[#902](https://github.com/cline/cline/issues/902)，
+[#1948](https://github.com/cline/cline/issues/1948)、[#902](https://github.com/cline/cline/issues/902)，以及
+[#11671](https://github.com/cline/cline/issues/11671)（报告 Cline CLI 文档路径与实际读取文件不一致），
 Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
 [#7509](https://github.com/continuedev/continue/issues/7509)，GitHub MCP Server 的
 [#1396](https://github.com/github/github-mcp-server/issues/1396)，
@@ -65,6 +66,9 @@ Codex 的 [#22842](https://github.com/openai/codex/issues/22842) 还报告 plugi
 ## 支持边界
 
 - 顶层为 `mcpServers` map 的 JSON/JSONC（Claude Desktop、Cline 风格）。
+- Cline CLI 报告的用户级路径
+  `~/.cline/data/settings/cline_mcp_settings.json`（文件存在时才发现；使用相同的
+  顶层 `mcpServers` envelope，依据 [Cline #11671](https://github.com/cline/cline/issues/11671)）。
 - 顶层为 `servers` map 的 JSON/JSONC（VS Code 风格，条目可带 `type: "stdio"`）。
 - JSON/JSONC Dev Container 文件中的嵌套
   `customizations.vscode.mcp.servers` map，结构依据
@@ -97,7 +101,8 @@ Codex 的 [#22842](https://github.com/openai/codex/issues/22842) 还报告 plugi
 `.github/mcp.json`、`.github/mcp-config.json`、`.cursor/mcp.json`，以及当前平台上
 Codex、Claude Code、Claude Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI
 的已知用户配置路径。Codex 发现包括 `~/.codex/config.toml` 以及上面所述有界的 plugin
-cache `.mcp.json`。Claude Code 发现包括
+cache `.mcp.json`；Cline CLI 发现包括存在时的
+`~/.cline/data/settings/cline_mcp_settings.json`。Claude Code 发现包括
 `~/.claude.json`，但只选择顶层 user scope 和当前工作区 local scope。
 Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
 和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。

@@ -1138,6 +1138,7 @@ fn discover_paths_from_roots(
             home.join(
                 ".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
             ),
+            home.join(".cline/data/settings/cline_mcp_settings.json"),
             home.join("Library/Application Support/Claude/claude_desktop_config.json"),
             home.join("Library/Application Support/Code/User/mcp.json"),
             home.join(
@@ -2107,6 +2108,21 @@ mod tests {
         assert!(paths.contains(&plugin_config));
         assert!(paths.contains(&vscode_user));
         assert!(paths.contains(&windows_vscode_user));
+    }
+
+    #[test]
+    fn discovers_cline_cli_config_path() {
+        let workspace = tempdir().expect("workspace");
+        let home = tempdir().expect("home");
+        let cline_cli = home
+            .path()
+            .join(".cline/data/settings/cline_mcp_settings.json");
+        fs::create_dir_all(cline_cli.parent().expect("parent")).expect("create parent");
+        fs::write(&cline_cli, "{}").expect("write Cline CLI config");
+
+        let paths = discover_paths_from_roots(workspace.path(), Some(home.path()), None);
+
+        assert!(paths.contains(&cline_cli));
     }
 
     #[test]

@@ -27,7 +27,8 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 同类启动故障在真实报告中反复出现：MCP 官方 servers 的 [#40](https://github.com/modelcontextprotocol/servers/issues/40)、
 [#64](https://github.com/modelcontextprotocol/servers/issues/64)、
 [#447](https://github.com/modelcontextprotocol/servers/issues/447)，Cline 的
-[#1948](https://github.com/cline/cline/issues/1948)、[#902](https://github.com/cline/cline/issues/902)，
+[#1948](https://github.com/cline/cline/issues/1948)、[#902](https://github.com/cline/cline/issues/902)，以及
+[#11671](https://github.com/cline/cline/issues/11671)（Cline CLI 文档路径与实际读取路径不一致），
 Continue 的 [#4791](https://github.com/continuedev/continue/issues/4791)、
 [#7509](https://github.com/continuedev/continue/issues/7509)，以及 GitHub MCP
 server 的
@@ -82,9 +83,10 @@ Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库�
 `.codex/config.toml`、`.devcontainer/devcontainer.json`、`.vscode/mcp.json`、
 `.mcp.json`、`.github/mcp.json`、`.github/mcp-config.json` 和
 `.cursor/mcp.json`；用户级发现包括 Codex 的 `~/.codex/config.toml`、Claude Code
-的 `~/.claude.json`、Copilot CLI 的 `~/.copilot/mcp-config.json` 以及当前平台的
-VS Code 用户级 `mcp.json`。对于 Claude Code，MCP Doctor 只检查顶层 user server
-和属于当前工作区的 local server。
+的 `~/.claude.json`、Copilot CLI 的 `~/.copilot/mcp-config.json`、当前平台的
+VS Code 用户级 `mcp.json`，以及存在时 Cline CLI 报告的
+`~/.cline/data/settings/cline_mcp_settings.json`。对于 Claude Code，MCP Doctor
+只检查顶层 user server 和属于当前工作区的 local server。
 
 ```bash
 mcp-doctor
@@ -120,6 +122,9 @@ Doctor 不会替客户端选择胜出定义。
 MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 
 - 顶层为 `mcpServers` map（Claude Desktop、Cline 风格）；
+- 已知的 Cline CLI 用户级路径
+  `~/.cline/data/settings/cline_mcp_settings.json`（仅在文件存在时发现；路径依据
+  [Cline #11671](https://github.com/cline/cline/issues/11671) 中记录的实现）；
 - 顶层为 `servers` map（VS Code 风格）；
 - `.devcontainer/devcontainer.json` 中的 VS Code Dev Container
   `customizations.vscode.mcp.servers` map（参见
