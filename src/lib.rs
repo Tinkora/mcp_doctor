@@ -139,6 +139,7 @@ pub enum FindingCode {
     Placeholder,
     EmptyEnv,
     ServerNameConflict,
+    DisabledServer,
     UnsupportedTransport,
     BearerTokenEnvMissing,
 }
@@ -409,7 +410,16 @@ fn inspect_document(
                 })?;
             if is_toml_config(path) {
                 match server.get("enabled") {
-                    Some(Value::Bool(false)) => continue,
+                    Some(Value::Bool(false)) => {
+                        report.findings.push(Finding {
+                            code: FindingCode::DisabledServer,
+                            severity: Severity::Info,
+                            server: Some(name.clone()),
+                            location: "enabled".to_string(),
+                            message: "Codex marks this server disabled; third-party MCP discovery tools may not honor that flag".to_string(),
+                        });
+                        continue;
+                    }
                     None | Some(Value::Bool(true)) => {}
                     Some(_) => {
                         return Err(DoctorError::InvalidServer {
@@ -1277,7 +1287,7 @@ mod tests {
     }
 
     #[test]
-    fn skips_disabled_codex_servers_and_warns_about_remote_servers() {
+    fn reports_disabled_codex_servers_and_warns_about_remote_servers() {
         let dir = tempdir().expect("tempdir");
         let config = dir.path().join("config.toml");
         fs::write(
@@ -1305,12 +1315,44 @@ mod tests {
             finding.code == FindingCode::UnsupportedTransport
                 && finding.server.as_deref() == Some("remote")
         }));
-        assert!(
-            report
-                .findings
-                .iter()
-                .all(|finding| finding.server.as_deref() != Some("disabled"))
-        );
+        assert!(report.findings.iter().any(|finding| {
+            finding.code == FindingCode::DisabledServer
+                && finding.server.as_deref() == Some("disabled")
+        }));
+    }
+
+    #[test]
+    fn disabled_codex_server_does_not_receive_launch_checks() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.disabled]
+                command = "missing-command-that-must-not-be-checked"
+                cwd = "/path/that-must-not-be-checked"
+                enabled = false
+            "#,
+        )
+        .expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::default()).expect("inspect config");
+
+        assert!(report.servers.is_empty());
+        assert!(report.findings.iter().any(|finding| {
+            finding.code == FindingCode::DisabledServer
+                && finding.severity == Severity::Info
+                && finding.location == "enabled"
+        }));
+        assert!(report.findings.iter().all(|finding| {
+            !matches!(
+                finding.code,
+                FindingCode::CommandNotFound
+                    | FindingCode::CwdNotFound
+                    | FindingCode::RelativeCommandPath
+                    | FindingCode::RelativeCwd
+            )
+        }));
     }
 
     #[test]

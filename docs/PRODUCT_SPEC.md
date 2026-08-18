@@ -58,7 +58,9 @@ duplicate MCP tables making the app unusable, while
 stale-path, and command-discovery failures. Codex
 [#30125](https://github.com/openai/codex/issues/30125) reports a remote server
 appearing to have bearer authentication configured even when the named
-environment variable is absent from the active client process.
+environment variable is absent from the active client process. Codex
+[#35448](https://github.com/openai/codex/issues/35448) reports disabled plugin
+entries remaining visible to third-party MCP discovery tools.
 
 ## Smallest useful outcome
 
@@ -90,7 +92,8 @@ values.
   `.codex/config.toml`; Codex itself loads project files only for trusted
   projects.
 - Server fields: `command`, `args`, optional `cwd`, and optional string `env`.
-- Codex `enabled = false` entries are skipped. `env_vars` accepts strings and
+- Codex `enabled = false` entries are skipped for launch checks and receive an
+  informational interoperability finding. `env_vars` accepts strings and
   `{ name, source = "local" | "remote" }` tables. These declarations are
   structurally validated without reading their named process values.
 - Remote Codex URL entries may declare a non-empty `bearer_token_env_var`.
@@ -137,12 +140,15 @@ repository-scoped configuration reports in
   parsed only for static empty-value and placeholder checks; they are not
   interpolated, used for command lookup, or emitted.
 - Codex variables named by `env_vars` are not read from the process environment
-  and are not included in findings. Disabled Codex entries produce no checks or
-  cross-file name-conflict warnings.
+  and are not included in findings. Disabled Codex entries produce no launch
+  checks or cross-file name-conflict warnings.
 - For a remote Codex `bearer_token_env_var`, only environment names are retained
   for an existence comparison. The configured name and token value are not
   emitted. A warning describes MCP Doctor's process and does not claim that a
   separately launched GUI client has the same environment.
+- A disabled Codex entry never receives command, cwd, or environment checks and
+  is not included in the server report; its informational finding only warns
+  that external discovery tools may ignore `enabled = false`.
 - Claude Code project entries outside the current workspace are ignored even
   when they coexist with inspected user-scope servers in `~/.claude.json`.
 - Exact and case-only duplicate stdio server names across inspected entries

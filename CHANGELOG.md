@@ -6,6 +6,11 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Report an informational warning for disabled Codex MCP entries that may still
+  be discovered by third-party tools, without checking or launching them.
+
 ## [0.1.8] - 2026-08-19
 
 ### Added

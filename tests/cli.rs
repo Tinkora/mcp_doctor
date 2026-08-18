@@ -330,6 +330,36 @@ fn codex_remote_auth_preflight_never_echoes_environment_name_or_value() {
 }
 
 #[test]
+fn reports_disabled_codex_servers_for_third_party_discovery() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        r#"
+            [mcp_servers.disabled]
+            command = "missing-command-that-must-not-be-checked"
+            enabled = false
+        "#,
+    )
+    .expect("write config");
+
+    for format in [None, Some("json")] {
+        let mut invocation = command();
+        invocation.arg("--no-discover");
+        if let Some(format) = format {
+            invocation.arg("--format").arg(format);
+        }
+        let output = invocation.arg(&config).output().expect("run");
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+        assert!(stdout.contains("disabled_server"), "{stdout}");
+        assert!(stdout.contains("third-party"), "{stdout}");
+        assert!(!stdout.contains("missing-command-that-must-not-be-checked"));
+    }
+}
+
+#[test]
 fn reports_conflicting_server_names_across_explicit_files() {
     let dir = tempdir().expect("tempdir");
     let user_config = dir.path().join("user-mcp.json");

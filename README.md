@@ -57,6 +57,8 @@ The same startup failures recur in real client reports:
   missing MCP commands. [#30125](https://github.com/openai/codex/issues/30125)
   shows a remote server appearing authenticated even when its configured
   bearer-token environment variable is absent from the client process.
+  [#35448](https://github.com/openai/codex/issues/35448) shows disabled plugin
+  entries remaining discoverable to third-party MCP tools.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -148,8 +150,10 @@ TOML:
   [official Codex MCP documentation](https://developers.openai.com/codex/mcp/);
 - stdio fields `command`, optional string-array `args`, optional string `cwd`,
   and optional string-map `env`.
-- Codex `enabled = false` servers are skipped. `env_vars` entries may be names
-  or `{ name, source = "local" | "remote" }` tables. Their structure is
+- Codex `enabled = false` servers are skipped for launch checks and receive an
+  informational warning because third-party MCP discovery tools may not honor
+  the Codex-specific flag. `env_vars` entries may be names or
+  `{ name, source = "local" | "remote" }` tables. Their structure is
   validated, but the named process values are never looked up or emitted.
 - For remote Codex URL entries, `bearer_token_env_var` must be a non-empty
   string. MCP Doctor warns when that environment-variable name is absent from
