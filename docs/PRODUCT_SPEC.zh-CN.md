@@ -21,7 +21,9 @@ Stack Overflow 问题都反复出现这些故障。
 配置解析本身也是反复出现的兼容性边界。GitHub Copilot CLI 的
 [#4323](https://github.com/github/copilot-cli/issues/4323) 报告指出，仓库级
 `.mcp.json` 中的注释会被严格 JSON 解析器判为无效，导致整个工作区的 MCP server
-都被跳过。VS Code 的 MCP 配置本身按 JSONC 设计，允许注释和尾逗号。
+都被跳过。VS Code 的 MCP 配置本身按 JSONC 设计，允许注释和尾逗号。Cline 的
+[#12199](https://github.com/cline/cline/pull/12199) 还记录了 Windows 边界：settings
+JSON 文件开头的 UTF-8 BOM 可能让严格解析器拒绝本来有效的配置。
 
 配置作用域冲突也是已有报告证明的故障。GitHub Copilot CLI 的
 [#3379](https://github.com/github/copilot-cli/issues/3379) 显示仓库级 server 会静默
@@ -71,6 +73,7 @@ Codex 的 [#37616](https://github.com/openai/codex/issues/37616) 和
 - 跳过 `enabled = false` 的 Codex 条目。`env_vars` 接受字符串或
   `{ name, source = "local" | "remote" }` table；只验证声明结构，不从进程环境
   读取其中命名的值。
+- JSON 和 JSONC 文件允许以 UTF-8 BOM 开头；解析前会移除 BOM，诊断中不会包含它。
 - 带 `url`、`http`、`sse` 或其他非 stdio `type` 的远程条目不检查，只报告明确的
   不支持传输诊断。
 - 忽略 plugin 提供的 Codex MCP server，因为顶层用户配置中没有它们的启动命令。

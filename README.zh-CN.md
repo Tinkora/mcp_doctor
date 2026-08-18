@@ -129,6 +129,8 @@ MVP 读取 JSON、JSONC（允许注释与尾逗号）和 Codex TOML：
 - 跳过 Codex `enabled = false` server。`env_vars` 条目可以是名称，或
   `{ name, source = "local" | "remote" }` table；工具会验证结构，但不会从进程
   环境查找或输出其中命名的值。
+- JSON 和 JSONC 文件可以以 UTF-8 BOM 开头；MCP Doctor 会在解析前移除它，兼容
+  常见的 Windows 编辑器输出。
 - VS Code 的 `${input:name}` 引用表示由客户端提供的输入，不会被当作未解析的进程环境占位符，
   也不会被展开。
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会被报告，但不会套用某个

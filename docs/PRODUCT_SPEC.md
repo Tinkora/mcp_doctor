@@ -26,7 +26,10 @@ Configuration parsing is also a recurring compatibility boundary. GitHub
 Copilot CLI issue [#4323](https://github.com/github/copilot-cli/issues/4323)
 reports that comments in a repository `.mcp.json` cause every workspace server
 to be skipped by a strict JSON parser. VS Code MCP configuration uses JSONC by
-design, including comments and trailing commas.
+design, including comments and trailing commas. Cline pull request
+[#12199](https://github.com/cline/cline/pull/12199) documents another Windows
+boundary: a UTF-8 BOM at the start of a settings JSON file can make a strict
+parser reject an otherwise valid configuration.
 
 Configuration scope collisions are another concrete failure mode. GitHub
 Copilot CLI [#3379](https://github.com/github/copilot-cli/issues/3379) reports
@@ -87,6 +90,8 @@ values.
 - Codex `enabled = false` entries are skipped. `env_vars` accepts strings and
   `{ name, source = "local" | "remote" }` tables. These declarations are
   structurally validated without reading their named process values.
+- JSON and JSONC files may begin with a UTF-8 BOM; it is removed before parsing
+  and never appears in diagnostics.
 - Remote entries (`url`, `http`, `sse`, or another non-stdio `type`) are not
   inspected; they receive an explicit unsupported-transport diagnostic.
 - Plugin-provided Codex MCP servers are ignored because their launch command is

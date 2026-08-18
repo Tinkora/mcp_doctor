@@ -149,6 +149,8 @@ TOML:
 - Codex `enabled = false` servers are skipped. `env_vars` entries may be names
   or `{ name, source = "local" | "remote" }` tables. Their structure is
   validated, but the named process values are never looked up or emitted.
+- JSON and JSONC files may begin with a UTF-8 BOM; MCP Doctor removes it before
+  parsing, matching common Windows editor output.
 - VS Code `${input:name}` references are client-provided inputs, not unresolved
   process-environment placeholders. They are never expanded.
 - Exact and case-only duplicate stdio server names across inspected entries are

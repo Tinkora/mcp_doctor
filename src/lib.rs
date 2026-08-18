@@ -232,13 +232,18 @@ fn parse_document(path: &Path, text: &str) -> Result<Value, DoctorError> {
         });
     }
 
-    if contains_unsupported_single_quote(text) {
+    // Windows editors may prefix JSON settings files with a UTF-8 BOM. JSONC
+    // clients commonly accept it, so remove it before syntax checks without
+    // changing the parsed configuration or exposing any values.
+    let json_text = text.strip_prefix('\u{feff}').unwrap_or(text);
+
+    if contains_unsupported_single_quote(json_text) {
         return Err(DoctorError::InvalidJson {
             path: path.to_path_buf(),
             message: "single-quoted strings are not valid JSONC".to_string(),
         });
     }
-    jsonc_parser::parse_to_serde_value(text, &jsonc_parse_options())
+    jsonc_parser::parse_to_serde_value(json_text, &jsonc_parse_options())
         .map_err(|source| DoctorError::InvalidJson {
             path: path.to_path_buf(),
             message: source.to_string(),
@@ -1083,6 +1088,26 @@ mod tests {
         }));
         let serialized = serde_json::to_string(&report).expect("serialize report");
         assert!(!serialized.contains("super-secret"));
+    }
+
+    #[test]
+    fn accepts_utf8_bom_in_json_configuration() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        let mut bytes = vec![0xef, 0xbb, 0xbf];
+        bytes.extend_from_slice(br#"{"mcpServers":{"demo":{"command":"missing-mcp-command"}}}"#);
+        fs::write(&config, bytes).expect("write config");
+
+        let report = inspect_file(&config, &CheckContext::default()).expect("inspect config");
+
+        assert_eq!(report.servers.len(), 1);
+        assert_eq!(report.servers[0].name, "demo");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CommandNotFound)
+        );
     }
 
     #[test]
