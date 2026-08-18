@@ -1,6 +1,6 @@
 [package]
 name = "mcp-doctor"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 rust-version = "1.85"
 description = "Static diagnostics for local stdio MCP server configurations"
