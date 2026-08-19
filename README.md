@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx` or
 Node binary on `PATH`, an invalid working directory, and unresolved environment
 placeholders.
 
-> Status: Alpha (`v0.1.12` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.13` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -138,6 +138,12 @@ base depends on the client. If `cwd` is absolute, a relative command path is
 checked against it. These warnings avoid pretending that Claude Desktop, Cline,
 Cursor, and VS Code resolve every relative path the same way.
 
+When a configured command is `npx` or `npm`, MCP Doctor also checks whether
+`node` is present on its current `PATH`. A missing Node.js runtime produces a
+`runtime_not_found` warning without executing either launcher. The warning is
+limited to the environment running MCP Doctor because GUI clients can inherit a
+different `PATH`.
+
 ## Supported configuration
 
 The MVP reads JSON, JSONC (JSON with comments and trailing commas), and Codex
@@ -225,10 +231,10 @@ cargo clippy --all-targets --locked -- -D warnings
 
 The test suite covers supported envelopes, JSONC comments and trailing commas,
 current-process PATH and `PATHEXT`, deterministic and client-dependent path
-diagnostics, placeholder redaction, VS Code input references, terminal-safe
-output, Claude Code user/local scope selection, unsupported transports,
-Codex TOML parsing and discovery, malformed input, JSON path encoding, CLI exit
-codes, and the no-execution boundary.
+diagnostics, launcher runtime prerequisites, placeholder redaction, VS Code
+input references, terminal-safe output, Claude Code user/local scope selection,
+unsupported transports, Codex TOML parsing and discovery, malformed input, JSON
+path encoding, CLI exit codes, and the no-execution boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),
