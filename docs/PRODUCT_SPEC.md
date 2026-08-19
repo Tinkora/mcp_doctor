@@ -151,6 +151,12 @@ repository-scoped configuration reports in
 [#3380](https://github.com/github/copilot-cli/issues/3380) and
 [#4429](https://github.com/github/copilot-cli/issues/4429).
 
+A discovered `.devcontainer/devcontainer.json` with no MCP declaration is
+ignored because Dev Container files commonly configure unrelated development
+settings. Once `customizations.vscode.mcp` is declared, malformed MCP structure
+remains an input error. Explicit files continue to require a supported MCP
+envelope.
+
 ## Checks and safety
 
 - Missing or empty `command` is an error.

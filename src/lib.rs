@@ -234,19 +234,37 @@ pub fn inspect_file_for_workspace(
     inspect_file_with_workspace(path, context, Some(workspace))
 }
 
+/// Inspect a conventionally discovered configuration, skipping a Dev
+/// Container file that does not declare any MCP configuration.
+pub fn inspect_discovered_file_for_workspace(
+    path: &Path,
+    context: &CheckContext,
+    workspace: &Path,
+) -> Result<Option<FileReport>, DoctorError> {
+    let document = read_document(path)?;
+    if is_devcontainer_config(path) && !devcontainer_declares_mcp(&document) {
+        return Ok(None);
+    }
+    inspect_document(path, &document, context, Some(workspace)).map(Some)
+}
+
 fn inspect_file_with_workspace(
     path: &Path,
     context: &CheckContext,
     workspace: Option<&Path>,
 ) -> Result<FileReport, DoctorError> {
+    let document = read_document(path)?;
+    inspect_document(path, &document, context, workspace)
+}
+
+fn read_document(path: &Path) -> Result<Value, DoctorError> {
     let bytes = fs::read(path).map_err(|source| DoctorError::Io {
         path: path.to_path_buf(),
         source,
     })?;
     let text = String::from_utf8(bytes)
         .map_err(|source| invalid_syntax_error(path, source.to_string()))?;
-    let document = parse_document(path, &text)?;
-    inspect_document(path, &document, context, workspace)
+    parse_document(path, &text)
 }
 
 fn parse_document(path: &Path, text: &str) -> Result<Value, DoctorError> {
@@ -322,6 +340,25 @@ fn is_toml_config(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("toml"))
+}
+
+fn is_devcontainer_config(path: &Path) -> bool {
+    path.file_name() == Some(OsStr::new("devcontainer.json"))
+        && path.parent().and_then(Path::file_name) == Some(OsStr::new(".devcontainer"))
+}
+
+fn devcontainer_declares_mcp(document: &Value) -> bool {
+    let Some(root) = document.as_object() else {
+        return true;
+    };
+    if root.contains_key("mcpServers") || root.contains_key("servers") {
+        return true;
+    }
+    root.get("customizations")
+        .and_then(Value::as_object)
+        .and_then(|customizations| customizations.get("vscode"))
+        .and_then(Value::as_object)
+        .is_some_and(|vscode| vscode.contains_key("mcp"))
 }
 
 fn is_codex_plugin_cache_config(path: &Path) -> bool {

@@ -19,7 +19,7 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 `bunx` 或所需 runtime、工作目录无效、环境变量占位符未解析。这些问题通常
 发生在 MCP Inspector 或客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.14` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.15` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -90,6 +90,10 @@ Desktop、Cline、Cursor、VS Code 和 GitHub Copilot CLI 约定路径。仓库�
 VS Code 用户级 `mcp.json`，以及存在时 Cline CLI 报告的
 `~/.cline/data/settings/cline_mcp_settings.json`。对于 Claude Code，MCP Doctor
 只检查顶层 user server 和属于当前工作区的 local server。
+
+自动发现时，不含 MCP 声明的 `.devcontainer/devcontainer.json` 会被忽略。已经声明
+MCP 但结构错误的文件，以及用户显式传入但不含受支持 MCP envelope 的文件，仍属于
+输入错误。
 
 ```bash
 mcp-doctor
