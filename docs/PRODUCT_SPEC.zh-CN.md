@@ -27,8 +27,12 @@ Stack Overflow 问题都反复出现这些故障。
 JSON 文件开头的 UTF-8 BOM 可能让严格解析器拒绝本来有效的配置。
 
 launcher 的运行时前置条件是另一类静态启动失败：`npx` 或 `npm` 可能存在，
-但客户端进程 `PATH` 中缺少它们所需的 `node` runtime。MCP Doctor 必须在不启动
-launcher、不读取配置环境变量值的前提下识别该依赖。
+但客户端进程 `PATH` 中缺少它们所需的 `node` runtime。相同问题也适用于常见的
+其他 launcher：`uvx` 需要 `uv`，`bunx` 需要 `bun`，`pnpm`/`pnpx` 需要 Node.js。
+公开报告中的 [Kaiden #2393](https://github.com/openkaiden/kaiden/issues/2393) 和
+[JetBrains CC GUI #1275](https://github.com/zhukunpenglinyutong/jetbrains-cc-gui/issues/1275)
+说明缺失 runtime 并不只发生在 npm 生态。MCP Doctor 必须在不启动 launcher、
+不读取配置环境变量值的前提下，使用当前进程 `PATH` 识别这些依赖。
 
 配置作用域冲突也是已有报告证明的故障。GitHub Copilot CLI 的
 [#3379](https://github.com/github/copilot-cli/issues/3379) 显示仓库级 server 会静默
@@ -117,8 +121,9 @@ Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/c
 - 裸命令只根据 MCP Doctor 当前进程的 `PATH` 检查，且不打印 `PATH` 或其条目；结果
   不宣称复现 GUI 客户端环境，也不使用配置中的 `env.PATH`。Windows 查找使用当前
   `PATHEXT`，缺失时使用平台默认值。
-- 对 `npx` 和 `npm`，使用同一个当前进程 `PATH` 检查必需的 `node` runtime。runtime
-  缺失时报告 warning，因为 GUI 客户端可能继承不同环境；不会启动 launcher。
+- 对 `npx`、`npm`、`pnpm` 和 `pnpx` 检查必需的 `node` runtime；对 `uvx` 检查
+  `uv`，对 `bunx` 检查 `bun`。所有检查使用同一个当前进程 `PATH`。runtime 缺失时
+  报告 warning，因为 GUI 客户端可能继承不同环境；不会启动 launcher。
 - 绝对命令路径和绝对工作目录会检查存在性，Unix 上还检查可执行权限。只有绝对 `cwd`
   提供确定基准时才继续检查相对命令；其他相对命令和工作目录只报告客户端上下文
   warning，避免给出猜测性的错误。
@@ -163,8 +168,8 @@ stdio 和远程传输。MCP Doctor 是协议启动前的预检层，专门处理
 
 ## 成功与停止条件
 
-当用户无需暴露 secret 或运行 server，就能从配置中定位缺失的 `npx`/Node 路径、
-已存在但缺少 Node runtime 的 `npx`/`npm` launcher、错误工作目录、Codex TOML
-语法错误、未解析占位符、缺失的 Codex 远程 bearer token 环境声明或跨文件 server
-名称冲突时，MVP 即成功。没有独立兼容性证据时停止扩展
+当用户无需暴露 secret 或运行 server，就能从配置中定位缺失的 launcher/runtime
+组合（`npx`/`npm`/`pnpm`/`pnpx` 与 Node.js、`uvx` 与 `uv`、`bunx` 与 Bun）、
+错误工作目录、Codex TOML 语法错误、未解析占位符、缺失的 Codex 远程 bearer token
+环境声明或跨文件 server 名称冲突时，MVP 即成功。没有独立兼容性证据时停止扩展
 解析器；新增客户端格式或进程执行模式前，先用具体 issue/discussion 反馈验证需求。

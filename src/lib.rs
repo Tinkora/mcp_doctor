@@ -1005,21 +1005,26 @@ fn check_required_runtime(
         .or_else(|| command_name.strip_suffix(".exe"))
         .or_else(|| command_name.strip_suffix(".bat"))
         .unwrap_or(&command_name);
-    if !matches!(command_name, "npm" | "npx") {
-        return;
-    }
+    let (runtime, runtime_label) = match command_name {
+        "npm" | "npx" | "pnpm" | "pnpx" => ("node", "Node.js"),
+        "uvx" => ("uv", "uv"),
+        "bunx" => ("bun", "Bun"),
+        _ => return,
+    };
 
-    let node_available = context.path_entries.iter().any(|entry| {
-        command_candidate(entry, "node", &context.command_extensions)
+    let runtime_available = context.path_entries.iter().any(|entry| {
+        command_candidate(entry, runtime, &context.command_extensions)
             .is_some_and(|candidate| candidate.is_file() && is_executable(&candidate))
     });
-    if !node_available {
+    if !runtime_available {
         findings.push(finding(
             FindingCode::RuntimeNotFound,
             Severity::Warning,
             server,
             "runtime",
-            "command requires Node.js, but node is not available on MCP Doctor's current PATH; a GUI client may inherit a different PATH",
+            &format!(
+                "command requires {runtime_label}, but {runtime} is not available on MCP Doctor's current PATH; a GUI client may inherit a different PATH"
+            ),
         ));
     }
 }
@@ -2030,6 +2035,97 @@ mod tests {
                 .iter()
                 .any(|finding| finding.code == FindingCode::RuntimeNotFound)
         );
+    }
+
+    #[test]
+    fn reports_missing_runtime_for_common_non_node_launchers_without_execution() {
+        for (launcher, runtime) in [
+            ("uvx", "uv"),
+            ("bunx", "bun"),
+            ("pnpm", "node"),
+            ("pnpx", "node"),
+        ] {
+            let dir = tempdir().expect("tempdir");
+            let launcher_path = dir.path().join(launcher);
+            fs::write(&launcher_path, "not executed").expect("write launcher placeholder");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                fs::set_permissions(&launcher_path, fs::Permissions::from_mode(0o755))
+                    .expect("chmod launcher");
+            }
+            let config = dir.path().join("mcp.json");
+            fs::write(
+                &config,
+                format!(r#"{{"mcpServers":{{"demo":{{"command":"{launcher}"}}}}}}"#),
+            )
+            .expect("write config");
+
+            let report = inspect_file(
+                &config,
+                &CheckContext::with_path([dir.path().to_path_buf()]),
+            )
+            .expect("inspect config");
+
+            assert!(
+                report
+                    .findings
+                    .iter()
+                    .any(|finding| finding.code == FindingCode::RuntimeNotFound
+                        && finding.message.contains(runtime)),
+                "expected missing {runtime} runtime for {launcher}: {:?}",
+                report.findings
+            );
+            assert_eq!(
+                fs::read_to_string(&launcher_path).expect("read launcher"),
+                "not executed"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_common_launchers_when_their_runtime_is_on_the_same_path() {
+        for (launcher, runtime) in [
+            ("uvx", "uv"),
+            ("bunx", "bun"),
+            ("pnpm", "node"),
+            ("pnpx", "node"),
+        ] {
+            let dir = tempdir().expect("tempdir");
+            for name in [launcher, runtime] {
+                let executable = dir.path().join(name);
+                fs::write(&executable, "not executed").expect("write runtime placeholder");
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+
+                    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
+                        .expect("chmod runtime");
+                }
+            }
+            let config = dir.path().join("mcp.json");
+            fs::write(
+                &config,
+                format!(r#"{{"mcpServers":{{"demo":{{"command":"{launcher}"}}}}}}"#),
+            )
+            .expect("write config");
+
+            let report = inspect_file(
+                &config,
+                &CheckContext::with_path([dir.path().to_path_buf()]),
+            )
+            .expect("inspect config");
+
+            assert!(
+                !report
+                    .findings
+                    .iter()
+                    .any(|finding| finding.code == FindingCode::RuntimeNotFound),
+                "unexpected runtime finding for {launcher}: {:?}",
+                report.findings
+            );
+        }
     }
 
     #[test]

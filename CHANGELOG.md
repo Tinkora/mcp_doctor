@@ -6,6 +6,13 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-19
+
+### Added
+
+- Warn when `uvx`, `bunx`, `pnpm`, or `pnpx` is present but its required
+  `uv`, Bun, or Node.js runtime is missing from MCP Doctor's current `PATH`.
+
 ## [0.1.13] - 2026-08-19
 
 ### Added

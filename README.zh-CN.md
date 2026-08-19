@@ -15,11 +15,11 @@
 <!-- markdownlint-enable MD033 -->
 
 `mcp-doctor` 是一个本地、静态的 stdio MCP server 配置预检器。它帮助 AI
-Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `npx` 或 Node、
-工作目录无效、环境变量占位符未解析。这些问题通常发生在 MCP Inspector 或
-客户端真正启动 server 之前。
+Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `npx`、`uvx`、
+`bunx` 或所需 runtime、工作目录无效、环境变量占位符未解析。这些问题通常
+发生在 MCP Inspector 或客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.13` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.14` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -54,6 +54,9 @@ bearer token 环境变量没有进入客户端进程，仍可能看起来已经�
 Stack Overflow 的
 [spawn npx 问题](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 也显示这不是单一客户端的问题。
+公开 MCP 报告还显示 `uvx` 和 `bunx` 的启动故障，例如
+[Kaiden #2393](https://github.com/openkaiden/kaiden/issues/2393) 和
+[JetBrains CC GUI #1275](https://github.com/zhukunpenglinyutong/jetbrains-cc-gui/issues/1275)。
 
 ## 安装
 
@@ -117,10 +120,10 @@ Doctor 不会替客户端选择胜出定义。
 取决于客户端时，只报告 warning；如果 `cwd` 是绝对路径，则会据此检查相对命令。
 这样不会假设 Claude Desktop、Cline、Cursor 和 VS Code 对所有相对路径采用相同语义。
 
-当配置中的 command 是 `npx` 或 `npm` 时，MCP Doctor 还会检查当前 `PATH` 中是否
-存在 `node`。缺少 Node.js runtime 时会产生 `runtime_not_found` warning，但不会
-启动任何 launcher。由于 GUI 客户端可能继承不同的 `PATH`，该提示只描述运行
-MCP Doctor 的当前环境。
+当配置中的 command 是 `npx`、`npm`、`pnpm` 或 `pnpx` 时，MCP Doctor 会检查当前
+`PATH` 中是否存在 `node`；对 `uvx` 检查 `uv`，对 `bunx` 检查 `bun`。缺少 runtime
+时会产生 `runtime_not_found` warning，但不会启动任何 launcher。由于 GUI 客户端
+可能继承不同的 `PATH`，该提示只描述运行 MCP Doctor 的当前环境。
 
 ## 支持的配置
 
@@ -193,7 +196,7 @@ cargo clippy --all-targets --locked -- -D warnings
 ```
 
 测试覆盖支持的配置封装、JSONC 注释和尾逗号、当前进程 PATH 与 `PATHEXT`、确定和客户端
-相关的路径诊断、launcher runtime 前置条件、占位符脱敏、VS Code 输入引用、终端安全
+相关的路径诊断、Node.js/uv/Bun launcher runtime 前置条件、占位符脱敏、VS Code 输入引用、终端安全
 输出、不支持的传输、Codex TOML 解析与发现、坏输入、Claude Code user/local scope
 选择、JSON 路径编码、CLI 退出码和“不执行命令”边界。
 
