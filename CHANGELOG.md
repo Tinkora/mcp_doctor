@@ -6,6 +6,13 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-19
+
+### Added
+
+- Warn when an `npx` or `npm` launcher is available but its required Node.js
+  runtime is absent from MCP Doctor's current `PATH`.
+
 ## [0.1.12] - 2026-08-19
 
 ### Added

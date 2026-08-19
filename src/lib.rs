@@ -133,6 +133,7 @@ pub enum FindingCode {
     CommandMissing,
     CommandNotFound,
     CommandNotExecutable,
+    RuntimeNotFound,
     RelativeCommandPath,
     CwdNotFound,
     RelativeCwd,
@@ -832,14 +833,16 @@ impl ServerCheck<'_> {
                 "stdio server command is missing or empty",
             ));
         } else if let Some(command) = self.command {
-            check_command(
+            if check_command(
                 self.server,
                 command,
                 self.cwd,
                 self.context,
                 self.plugin_cache,
                 findings,
-            );
+            ) {
+                check_required_runtime(self.server, command, self.context, findings);
+            }
         }
         self.check_cwd(findings);
         self.check_args(findings);
@@ -917,10 +920,10 @@ fn check_command(
     context: &CheckContext,
     plugin_cache: bool,
     findings: &mut Vec<Finding>,
-) {
+) -> bool {
     if let Some(finding) = inspect_value(command, "command", Some(server), context) {
         findings.push(finding);
-        return;
+        return false;
     }
     let command_path = Path::new(command);
     if command_path.components().count() > 1 || command.contains('/') || command.contains('\\') {
@@ -929,16 +932,16 @@ fn check_command(
         } else {
             let Some(cwd) = cwd else {
                 findings.push(relative_command_finding(server, plugin_cache));
-                return;
+                return false;
             };
             let cwd_path = Path::new(cwd);
             if !cwd_path.is_absolute() || placeholder_name(cwd).is_some() {
                 findings.push(relative_command_finding(server, plugin_cache));
-                return;
+                return false;
             }
             cwd_path.join(command_path)
         };
-        if !resolved.is_file() {
+        return if !resolved.is_file() {
             findings.push(finding(
                 FindingCode::CommandNotFound,
                 Severity::Error,
@@ -946,6 +949,7 @@ fn check_command(
                 "command",
                 "explicit command path does not point to a file",
             ));
+            false
         } else if !is_executable(&resolved) {
             findings.push(finding(
                 FindingCode::CommandNotExecutable,
@@ -954,14 +958,17 @@ fn check_command(
                 "command",
                 "explicit command path is not executable",
             ));
-        }
-        return;
+            false
+        } else {
+            true
+        };
     }
 
-    if !context.path_entries.iter().any(|entry| {
+    let available = context.path_entries.iter().any(|entry| {
         command_candidate(entry, command, &context.command_extensions)
             .is_some_and(|candidate| candidate.is_file() && is_executable(&candidate))
-    }) {
+    });
+    if !available {
         findings.push(finding(
             FindingCode::CommandNotFound,
             Severity::Error,
@@ -969,6 +976,7 @@ fn check_command(
             "command",
             "command is not available on the current PATH",
         ));
+        false
     } else {
         findings.push(finding(
             FindingCode::PathContext,
@@ -976,6 +984,42 @@ fn check_command(
             server,
             "command",
             "command exists on MCP Doctor's current PATH, but a GUI client may inherit a different PATH; prefer an absolute command path",
+        ));
+        true
+    }
+}
+
+fn check_required_runtime(
+    server: &str,
+    command: &str,
+    context: &CheckContext,
+    findings: &mut Vec<Finding>,
+) {
+    let command_name = command
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(command)
+        .to_ascii_lowercase();
+    let command_name = command_name
+        .strip_suffix(".cmd")
+        .or_else(|| command_name.strip_suffix(".exe"))
+        .or_else(|| command_name.strip_suffix(".bat"))
+        .unwrap_or(&command_name);
+    if !matches!(command_name, "npm" | "npx") {
+        return;
+    }
+
+    let node_available = context.path_entries.iter().any(|entry| {
+        command_candidate(entry, "node", &context.command_extensions)
+            .is_some_and(|candidate| candidate.is_file() && is_executable(&candidate))
+    });
+    if !node_available {
+        findings.push(finding(
+            FindingCode::RuntimeNotFound,
+            Severity::Warning,
+            server,
+            "runtime",
+            "command requires Node.js, but node is not available on MCP Doctor's current PATH; a GUI client may inherit a different PATH",
         ));
     }
 }
@@ -1922,6 +1966,69 @@ mod tests {
         assert!(inspect_value("${input:api-key}", "args[0]", None, &context).is_none());
         assert!(
             inspect_value("prefix-${input:api-key}-suffix", "args[0]", None, &context,).is_none()
+        );
+    }
+
+    #[test]
+    fn reports_missing_node_runtime_for_npx_without_execution() {
+        let dir = tempdir().expect("tempdir");
+        let npx = dir.path().join("npx");
+        fs::write(&npx, "not executed").expect("write npx placeholder");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        let config = dir.path().join("mcp.json");
+        fs::write(&config, r#"{"mcpServers":{"demo":{"command":"npx"}}}"#).expect("write config");
+
+        let report = inspect_file(
+            &config,
+            &CheckContext::with_path([dir.path().to_path_buf()]),
+        )
+        .expect("inspect config");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::CommandNotFound)
+        );
+        assert!(report.findings.iter().any(|finding| {
+            finding.code == FindingCode::RuntimeNotFound
+                && finding.severity == Severity::Warning
+                && finding.message.contains("Node.js")
+        }));
+    }
+
+    #[test]
+    fn accepts_npx_when_node_is_available_on_the_same_path() {
+        let dir = tempdir().expect("tempdir");
+        for name in ["npx", "node"] {
+            let executable = dir.path().join(name);
+            fs::write(&executable, "not executed").expect("write runtime placeholder");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).expect("chmod");
+            }
+        }
+        let config = dir.path().join("mcp.json");
+        fs::write(&config, r#"{"mcpServers":{"demo":{"command":"npx"}}}"#).expect("write config");
+
+        let report = inspect_file(
+            &config,
+            &CheckContext::with_path([dir.path().to_path_buf()]),
+        )
+        .expect("inspect config");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.code == FindingCode::RuntimeNotFound)
         );
     }
 
