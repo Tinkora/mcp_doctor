@@ -115,6 +115,11 @@ cache `.mcp.json`；Cline CLI 发现包括存在时的
 Copilot 路径依据其仓库级配置问题 [#3380](https://github.com/github/copilot-cli/issues/3380)
 和统一配置诉求 [#4429](https://github.com/github/copilot-cli/issues/4429) 登记。
 
+如果自动发现的 `.devcontainer/devcontainer.json` 没有声明 MCP，它会被忽略，因为
+Dev Container 文件通常还包含与 MCP 无关的开发设置。一旦声明
+`customizations.vscode.mcp`，错误的 MCP 结构仍属于输入错误；显式传入的文件也仍须
+包含受支持的 MCP envelope。
+
 ## 检查与安全
 
 - 缺失或空的 `command` 是错误。

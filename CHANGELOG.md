@@ -6,6 +6,14 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-08-19
+
+### Fixed
+
+- Ignore a conventionally discovered `.devcontainer/devcontainer.json` when
+  it contains no MCP declaration, while preserving input errors for malformed
+  MCP structures and explicitly supplied non-MCP files.
+
 ## [0.1.14] - 2026-08-19
 
 ### Added

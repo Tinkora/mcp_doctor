@@ -161,6 +161,77 @@ fn cli_inspects_explicit_devcontainer_mcp_configuration() {
 }
 
 #[test]
+fn discovery_ignores_devcontainer_without_mcp_configuration() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let app_data = tempdir().expect("app data");
+    let config = workspace.path().join(".devcontainer/devcontainer.json");
+    fs::create_dir_all(config.parent().expect("config parent")).expect("create config parent");
+    fs::write(&config, r#"{"name":"Rust","image":"rust:latest"}"#).expect("write config");
+
+    let output = command()
+        .current_dir(workspace.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("APPDATA", app_data.path())
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(
+        String::from_utf8(output.stdout)
+            .expect("utf8 stdout")
+            .contains("No MCP configuration files found")
+    );
+}
+
+#[test]
+fn explicit_devcontainer_without_mcp_configuration_remains_an_input_error() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("devcontainer.json");
+    fs::write(&config, r#"{"name":"Rust","image":"rust:latest"}"#).expect("write config");
+
+    let output = command().arg(&config).output().expect("run");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .expect("utf8 stderr")
+            .contains("expected a top-level mcpServers or servers object")
+    );
+}
+
+#[test]
+fn discovery_rejects_declared_devcontainer_mcp_with_invalid_servers() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let app_data = tempdir().expect("app data");
+    let config = workspace.path().join(".devcontainer/devcontainer.json");
+    fs::create_dir_all(config.parent().expect("config parent")).expect("create config parent");
+    fs::write(
+        &config,
+        r#"{"customizations":{"vscode":{"mcp":{"servers":[]}}}}"#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .current_dir(workspace.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("APPDATA", app_data.path())
+        .output()
+        .expect("run");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .expect("utf8 stderr")
+            .contains("customizations.vscode.mcp.servers must be an object")
+    );
+}
+
+#[test]
 fn discovery_inspects_claude_code_user_and_current_workspace_scopes() {
     let home = tempdir().expect("home");
     let workspace = tempdir().expect("workspace");

@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use clap::{Parser, ValueEnum};
 use mcp_doctor::{
     CheckContext, FileReport, Finding, Severity, annotate_server_name_conflicts, discover_paths,
-    inspect_file_for_workspace,
+    inspect_discovered_file_for_workspace, inspect_file_for_workspace,
 };
 use serde::Serialize;
 
@@ -75,8 +75,14 @@ fn main() -> ExitCode {
     let mut errors = Vec::new();
 
     for path in paths {
-        match inspect_file_for_workspace(&path, &context, &workspace) {
-            Ok(report) => files.push(report),
+        let inspection = if explicit {
+            inspect_file_for_workspace(&path, &context, &workspace).map(Some)
+        } else {
+            inspect_discovered_file_for_workspace(&path, &context, &workspace)
+        };
+        match inspection {
+            Ok(Some(report)) => files.push(report),
+            Ok(None) => {}
             Err(error) => errors.push(InputError {
                 path: path.to_string_lossy().into_owned(),
                 message: error.to_string(),

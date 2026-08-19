@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx`,
 `uvx`, `bunx`, or runtime binary on `PATH`, an invalid working directory, and
 unresolved environment placeholders.
 
-> Status: Alpha (`v0.1.14` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.15` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -106,6 +106,11 @@ the Cline CLI, it also discovers the reported
 `~/.cline/data/settings/cline_mcp_settings.json` path when present. For Claude
 Code, MCP Doctor inspects top-level user servers and only the local servers
 belonging to the current workspace.
+
+During automatic discovery, a `.devcontainer/devcontainer.json` file with no
+MCP declaration is ignored. A malformed declared MCP structure, or an
+explicitly supplied file with no supported MCP envelope, remains an input
+error.
 
 ```bash
 mcp-doctor
