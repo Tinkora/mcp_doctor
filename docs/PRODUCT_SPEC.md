@@ -38,6 +38,14 @@ be present while their required `node` runtime is absent from the client
 process `PATH`. MCP Doctor must identify this dependency without launching the
 launcher or reading configured environment values.
 
+The same failure pattern applies to other common MCP launchers: `uvx` requires
+the `uv` executable, `bunx` requires `bun`, and `pnpm`/`pnpx` require Node.js.
+Public reports such as [Kaiden #2393](https://github.com/openkaiden/kaiden/issues/2393)
+and [JetBrains CC GUI #1275](https://github.com/zhukunpenglinyutong/jetbrains-cc-gui/issues/1275)
+show that these missing-runtime failures occur outside the npm ecosystem too.
+The check must remain a current-process `PATH` preflight and must never execute
+the launcher.
+
 Configuration scope collisions are another concrete failure mode. GitHub
 Copilot CLI [#3379](https://github.com/github/copilot-cli/issues/3379) reports
 that a repository server silently shadows a same-named user definition while
@@ -150,7 +158,8 @@ repository-scoped configuration reports in
   printing `PATH` or its entries. The result does not claim to reproduce a GUI
   client's environment or a configured `env.PATH`. Windows lookup uses the
   current `PATHEXT` with the platform defaults as a fallback.
-- For `npx` and `npm`, `node` is checked as a required launcher runtime using the
+- For `npx`, `npm`, `pnpm`, and `pnpx`, `node` is checked as a required launcher
+  runtime; `uvx` requires `uv`, and `bunx` requires `bun`. Each check uses the
   same current-process `PATH`. A missing runtime is a warning because a GUI
   client may inherit a different environment; no launcher is executed.
 - Absolute command paths and working directories are checked for existence and,
@@ -211,11 +220,11 @@ claim protocol compatibility or server correctness.
 
 ## Success and stop conditions
 
-The MVP is successful when a user can identify a missing `npx`/Node path, a
-present `npx`/`npm` launcher with a missing Node runtime, bad working directory,
-malformed Codex TOML, unresolved placeholder, missing Codex remote bearer-token
-environment declaration, or cross-file server name conflict without exposing a
-secret or running a server. Stop expanding the
+The MVP is successful when a user can identify a missing launcher/runtime pair
+(`npx`/`npm`/`pnpm`/`pnpx` with Node.js, `uvx` with `uv`, or `bunx` with Bun), a
+bad working directory, malformed Codex TOML, unresolved placeholder, missing
+Codex remote bearer-token environment declaration, or cross-file server name
+conflict without exposing a secret or running a server. Stop expanding the
 parser when a format lacks independent compatibility evidence; validate demand
 through concrete issue or discussion reports before adding another client
 format or a process execution mode.

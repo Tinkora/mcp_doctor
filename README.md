@@ -16,11 +16,11 @@
 
 `mcp-doctor` is a local, static preflight checker for stdio MCP server
 configuration. It helps an agent developer find the launch failures that often
-happen before MCP Inspector or a client can start a server: a missing `npx` or
-Node binary on `PATH`, an invalid working directory, and unresolved environment
-placeholders.
+happen before MCP Inspector or a client can start a server: a missing `npx`,
+`uvx`, `bunx`, or runtime binary on `PATH`, an invalid working directory, and
+unresolved environment placeholders.
 
-> Status: Alpha (`v0.1.13` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.14` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -39,6 +39,9 @@ The same startup failures recur in real client reports:
 - [Continue #4791](https://github.com/continuedev/continue/issues/4791) and
   [#7509](https://github.com/continuedev/continue/issues/7509) report missing
   `npx` and timeouts.
+- Public MCP reports also show launch failures for `uvx` and `bunx`, including
+  [Kaiden #2393](https://github.com/openkaiden/kaiden/issues/2393) and
+  [JetBrains CC GUI #1275](https://github.com/zhukunpenglinyutong/jetbrains-cc-gui/issues/1275).
 - [GitHub MCP server #1396](https://github.com/github/github-mcp-server/issues/1396)
   reports local server startup configuration problems.
 - [GitHub Copilot CLI #3379](https://github.com/github/copilot-cli/issues/3379)
@@ -138,9 +141,10 @@ base depends on the client. If `cwd` is absolute, a relative command path is
 checked against it. These warnings avoid pretending that Claude Desktop, Cline,
 Cursor, and VS Code resolve every relative path the same way.
 
-When a configured command is `npx` or `npm`, MCP Doctor also checks whether
-`node` is present on its current `PATH`. A missing Node.js runtime produces a
-`runtime_not_found` warning without executing either launcher. The warning is
+When a configured command is `npx`, `npm`, `pnpm`, or `pnpx`, MCP Doctor checks
+whether `node` is present on its current `PATH`. For `uvx` it checks `uv`, and
+for `bunx` it checks `bun`. A missing runtime produces a
+`runtime_not_found` warning without executing any launcher. The warning is
 limited to the environment running MCP Doctor because GUI clients can inherit a
 different `PATH`.
 
@@ -227,14 +231,18 @@ correctly.
 cargo fmt --all -- --check
 cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
+npx --yes markdownlint-cli2@0.23.2 "**/*.md"
+shellcheck scripts/publish_release.sh
+ruby scripts/test_release_workflow.rb
+ruby scripts/test_publish_release.rb
 ```
 
 The test suite covers supported envelopes, JSONC comments and trailing commas,
 current-process PATH and `PATHEXT`, deterministic and client-dependent path
-diagnostics, launcher runtime prerequisites, placeholder redaction, VS Code
-input references, terminal-safe output, Claude Code user/local scope selection,
-unsupported transports, Codex TOML parsing and discovery, malformed input, JSON
-path encoding, CLI exit codes, and the no-execution boundary.
+diagnostics, Node.js/uv/Bun launcher runtime prerequisites, placeholder redaction,
+VS Code input references, terminal-safe output, Claude Code user/local scope
+selection, unsupported transports, Codex TOML parsing and discovery, malformed
+input, JSON path encoding, CLI exit codes, and the no-execution boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),
