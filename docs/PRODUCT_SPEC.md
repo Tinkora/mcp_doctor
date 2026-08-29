@@ -4,6 +4,8 @@
 
 ## Evidence-backed problem
 
+Windows GUI integrations can reject otherwise usable MCP files when path interpolation or JSON parsing differs from the CLI. See the reported `Invalid MCP configuration` case in [desktop-cc-gui#1080](https://github.com/zhukunpenglinyutong/desktop-cc-gui/issues/1080).
+
 People configuring local MCP servers repeatedly hit launch failures before a
 protocol request is ever made: `npx` is not on the client process `PATH`, Node
 comes from an NVM shell that the host app does not inherit, or a Windows path

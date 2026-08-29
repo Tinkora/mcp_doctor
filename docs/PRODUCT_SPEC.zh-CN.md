@@ -4,6 +4,8 @@
 
 ## 有证据的问题
 
+Windows 图形客户端可能因为路径插值或 JSON 解析差异而拒绝命令行可用的 MCP 文件；参见 [desktop-cc-gui#1080](https://github.com/zhukunpenglinyutong/desktop-cc-gui/issues/1080) 报告的 `Invalid MCP configuration` 问题。
+
 本地 MCP 配置经常在协议请求开始前就启动失败：客户端进程的 `PATH` 中没有
 `npx`，Node 来自宿主应用没有继承的 NVM shell，或者 Windows 路径和工作目录
 错误。MCP 官方 servers 的 [#40](https://github.com/modelcontextprotocol/servers/issues/40)、
