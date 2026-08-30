@@ -21,7 +21,13 @@ required_workflow_fragments = [
   "sbom-path:",
   "bash scripts/publish_release.sh create release-assets",
   'bash scripts/publish_release.sh publish release-assets "${RELEASE_ID}"',
-  'bash scripts/publish_release.sh cleanup release-assets "${RELEASE_ID:-}"'
+  'bash scripts/publish_release.sh cleanup release-assets "${RELEASE_ID:-}"',
+  'git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main',
+  'actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=push',
+  'sha256sum --check --strict SHA256SUMS',
+  'name: verified-release-assets',
+  'max_by(.run_attempt).conclusion',
+  'failure|cancelled|timed_out|action_required|skipped|stale'
 ]
 
 required_workflow_fragments.each do |fragment|
