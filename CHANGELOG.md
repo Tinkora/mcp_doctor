@@ -6,6 +6,16 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-08-30
+
+### Added
+
+- Add a read-only `--portability-target` report for Codex, Claude Code,
+  VS Code, and Cursor that classifies modeled stdio semantics as `portable`,
+  `lossy`, or `unsupported` without converting configuration or exposing
+  placeholder and environment names. Unknown fields remain explicitly lossy.
+- Make `--ci` fail when a requested target has non-portable server semantics.
+
 ## [0.1.15] - 2026-08-19
 
 ### Fixed

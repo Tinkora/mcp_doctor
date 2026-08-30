@@ -129,6 +129,49 @@ pub enum Severity {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum PortabilityTarget {
+    Codex,
+    ClaudeCode,
+    #[serde(rename = "vscode")]
+    VsCode,
+    Cursor,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PortabilityStatus {
+    Portable,
+    Lossy,
+    Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PortabilityReasonCode {
+    ClientSpecificPlaceholder,
+    ProcessPathSemantics,
+    ClientSpecificField,
+    UnmodeledField,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PortabilityReason {
+    pub code: PortabilityReasonCode,
+    pub status: PortabilityStatus,
+    pub location: &'static str,
+    pub message: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PortabilityAssessment {
+    pub target: PortabilityTarget,
+    pub scope: &'static str,
+    pub status: PortabilityStatus,
+    pub reasons: Vec<PortabilityReason>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FindingCode {
     CommandMissing,
     CommandNotFound,
@@ -159,6 +202,8 @@ pub struct Finding {
 pub struct ServerReport {
     pub name: String,
     pub transport: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub portability: Option<PortabilityAssessment>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -224,6 +269,16 @@ pub fn inspect_file(path: &Path, context: &CheckContext) -> Result<FileReport, D
     inspect_file_with_workspace(path, context, None)
 }
 
+/// Inspect one configuration and annotate server semantics for a target MCP
+/// client without converting the source file or reading secret values.
+pub fn inspect_file_for_target(
+    path: &Path,
+    context: &CheckContext,
+    target: PortabilityTarget,
+) -> Result<FileReport, DoctorError> {
+    inspect_file_with_workspace_and_target(path, context, None, Some(target))
+}
+
 /// Inspect one configuration file and include Claude Code's local scope for
 /// the supplied workspace without inspecting other project entries.
 pub fn inspect_file_for_workspace(
@@ -232,6 +287,15 @@ pub fn inspect_file_for_workspace(
     workspace: &Path,
 ) -> Result<FileReport, DoctorError> {
     inspect_file_with_workspace(path, context, Some(workspace))
+}
+
+pub fn inspect_file_for_workspace_and_target(
+    path: &Path,
+    context: &CheckContext,
+    workspace: &Path,
+    target: PortabilityTarget,
+) -> Result<FileReport, DoctorError> {
+    inspect_file_with_workspace_and_target(path, context, Some(workspace), Some(target))
 }
 
 /// Inspect a conventionally discovered configuration, skipping a Dev
@@ -245,7 +309,20 @@ pub fn inspect_discovered_file_for_workspace(
     if is_devcontainer_config(path) && !devcontainer_declares_mcp(&document) {
         return Ok(None);
     }
-    inspect_document(path, &document, context, Some(workspace)).map(Some)
+    inspect_document(path, &document, context, Some(workspace), None).map(Some)
+}
+
+pub fn inspect_discovered_file_for_workspace_and_target(
+    path: &Path,
+    context: &CheckContext,
+    workspace: &Path,
+    target: PortabilityTarget,
+) -> Result<Option<FileReport>, DoctorError> {
+    let document = read_document(path)?;
+    if is_devcontainer_config(path) && !devcontainer_declares_mcp(&document) {
+        return Ok(None);
+    }
+    inspect_document(path, &document, context, Some(workspace), Some(target)).map(Some)
 }
 
 fn inspect_file_with_workspace(
@@ -253,8 +330,17 @@ fn inspect_file_with_workspace(
     context: &CheckContext,
     workspace: Option<&Path>,
 ) -> Result<FileReport, DoctorError> {
+    inspect_file_with_workspace_and_target(path, context, workspace, None)
+}
+
+fn inspect_file_with_workspace_and_target(
+    path: &Path,
+    context: &CheckContext,
+    workspace: Option<&Path>,
+    portability_target: Option<PortabilityTarget>,
+) -> Result<FileReport, DoctorError> {
     let document = read_document(path)?;
-    inspect_document(path, &document, context, workspace)
+    inspect_document(path, &document, context, workspace, portability_target)
 }
 
 fn read_document(path: &Path) -> Result<Value, DoctorError> {
@@ -439,6 +525,7 @@ fn inspect_document(
     document: &Value,
     context: &CheckContext,
     workspace: Option<&Path>,
+    portability_target: Option<PortabilityTarget>,
 ) -> Result<FileReport, DoctorError> {
     let root = document
         .as_object()
@@ -530,6 +617,9 @@ fn inspect_document(
             report.servers.push(ServerReport {
                 name: name.clone(),
                 transport: "stdio",
+                portability: portability_target.map(|target| {
+                    assess_portability(server, command, &args, cwd.as_deref(), target)
+                }),
             });
             ServerCheck {
                 server: name,
@@ -544,6 +634,132 @@ fn inspect_document(
         }
     }
     Ok(report)
+}
+
+fn assess_portability(
+    server: &Map<String, Value>,
+    command: Option<&str>,
+    args: &[String],
+    cwd: Option<&str>,
+    target: PortabilityTarget,
+) -> PortabilityAssessment {
+    let mut reasons = Vec::new();
+    if let Some(location) = (target != PortabilityTarget::VsCode)
+        .then(|| placeholder_location(server, "${input:"))
+        .flatten()
+    {
+        reasons.push(PortabilityReason {
+            code: PortabilityReasonCode::ClientSpecificPlaceholder,
+            status: PortabilityStatus::Lossy,
+            location,
+            message: "the source uses a VS Code input placeholder that requires target-specific review",
+        });
+    }
+    if let Some(location) = (target != PortabilityTarget::VsCode)
+        .then(|| placeholder_location(server, "${workspaceFolder}"))
+        .flatten()
+    {
+        reasons.push(PortabilityReason {
+            code: PortabilityReasonCode::ClientSpecificPlaceholder,
+            status: PortabilityStatus::Lossy,
+            location,
+            message: "the source uses a VS Code workspace placeholder that requires target-specific review",
+        });
+    }
+    if command.is_some_and(is_relative_process_path)
+        || args.iter().any(|value| is_path_like_argument(value))
+        || cwd.is_some_and(|value| Path::new(value).is_relative())
+    {
+        reasons.push(PortabilityReason {
+            code: PortabilityReasonCode::ProcessPathSemantics,
+            status: PortabilityStatus::Lossy,
+            location: "command_args_or_cwd",
+            message: "process paths can depend on client working-directory or host-platform semantics",
+        });
+    }
+    if target != PortabilityTarget::Codex && server.contains_key("env_vars") {
+        reasons.push(PortabilityReason {
+            code: PortabilityReasonCode::ClientSpecificField,
+            status: PortabilityStatus::Lossy,
+            location: "environment_reference",
+            message: "the source uses a Codex-specific environment declaration that requires target-specific review",
+        });
+    }
+    if target != PortabilityTarget::VsCode && server.contains_key("envFile") {
+        reasons.push(PortabilityReason {
+            code: PortabilityReasonCode::ClientSpecificField,
+            status: PortabilityStatus::Lossy,
+            location: "envFile",
+            message: "the source uses a VS Code environment file reference that requires target-specific review",
+        });
+    }
+    const MODELED_FIELDS: &[&str] = &[
+        "type", "command", "args", "cwd", "env", "env_vars", "envFile",
+    ];
+    if server
+        .keys()
+        .any(|field| !MODELED_FIELDS.contains(&field.as_str()))
+    {
+        reasons.push(PortabilityReason {
+            code: PortabilityReasonCode::UnmodeledField,
+            status: PortabilityStatus::Lossy,
+            location: "server",
+            message: "the source contains a field outside the modeled stdio portability scope",
+        });
+    }
+    let status = reasons
+        .iter()
+        .map(|reason| reason.status)
+        .max()
+        .unwrap_or(PortabilityStatus::Portable);
+    PortabilityAssessment {
+        target,
+        scope: "modeled_stdio_semantics",
+        status,
+        reasons,
+    }
+}
+
+fn value_contains_text(value: &Value, pattern: &str) -> bool {
+    match value {
+        Value::String(value) => value.contains(pattern),
+        Value::Array(values) => values
+            .iter()
+            .any(|value| value_contains_text(value, pattern)),
+        Value::Object(values) => values
+            .values()
+            .any(|value| value_contains_text(value, pattern)),
+        _ => false,
+    }
+}
+
+fn placeholder_location(server: &Map<String, Value>, pattern: &str) -> Option<&'static str> {
+    ["command", "args", "cwd", "env", "headers"]
+        .into_iter()
+        .find(|field| {
+            server
+                .get(*field)
+                .is_some_and(|value| value_contains_text(value, pattern))
+        })
+}
+
+fn is_relative_process_path(value: &str) -> bool {
+    let path = Path::new(value);
+    path.is_relative() && (value.starts_with('.') || value.contains('/') || value.contains('\\'))
+}
+
+fn is_path_like_argument(value: &str) -> bool {
+    let path = Path::new(value);
+    if path.is_absolute() || value.starts_with("./") || value.starts_with("../") {
+        return true;
+    }
+    path.is_relative()
+        && path.extension().is_some_and(|extension| {
+            matches!(
+                extension.to_string_lossy().to_ascii_lowercase().as_str(),
+                "js" | "mjs" | "cjs" | "ts" | "py" | "rb" | "jar"
+            )
+        })
 }
 
 fn inspect_codex_remote_auth(
@@ -1328,6 +1544,183 @@ mod tests {
         }));
         let serialized = serde_json::to_string(&report).expect("serialize report");
         assert!(!serialized.contains("super-secret"));
+    }
+
+    #[test]
+    fn marks_vscode_input_placeholders_lossy_for_codex() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{"servers":{"demo":{"command":"node","args":["${input:token}"]}}}"#,
+        )
+        .expect("write config");
+
+        let report =
+            inspect_file_for_target(&config, &CheckContext::default(), PortabilityTarget::Codex)
+                .expect("inspect config");
+        let portability = report.servers[0]
+            .portability
+            .as_ref()
+            .expect("portability assessment");
+
+        assert_eq!(portability.status, PortabilityStatus::Lossy);
+        assert!(portability.reasons.iter().any(|reason| {
+            reason.code == PortabilityReasonCode::ClientSpecificPlaceholder
+                && reason.location == "args"
+                && !reason.message.contains("token")
+        }));
+    }
+
+    #[test]
+    fn marks_relative_process_paths_lossy_for_other_clients() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"demo":{"command":"./server","cwd":"./tools"}}}"#,
+        )
+        .expect("write config");
+
+        let report = inspect_file_for_target(
+            &config,
+            &CheckContext::default(),
+            PortabilityTarget::ClaudeCode,
+        )
+        .expect("inspect config");
+        let portability = report.servers[0]
+            .portability
+            .as_ref()
+            .expect("portability assessment");
+
+        assert_eq!(portability.status, PortabilityStatus::Lossy);
+        assert!(
+            portability
+                .reasons
+                .iter()
+                .any(|reason| { reason.code == PortabilityReasonCode::ProcessPathSemantics })
+        );
+    }
+
+    #[test]
+    fn marks_plain_stdio_servers_portable() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"demo":{"command":"node","args":["--stdio"]}}}"#,
+        )
+        .expect("write config");
+
+        let report =
+            inspect_file_for_target(&config, &CheckContext::default(), PortabilityTarget::Cursor)
+                .expect("inspect config");
+
+        assert_eq!(
+            report.servers[0].portability.as_ref().unwrap().status,
+            PortabilityStatus::Portable
+        );
+    }
+
+    #[test]
+    fn marks_codex_only_fields_lossy_for_vscode_without_exposing_names() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo]
+                command = "node"
+                env_vars = [{ name = "PRIVATE_TOKEN", source = "local" }]
+            "#,
+        )
+        .expect("write config");
+
+        let report =
+            inspect_file_for_target(&config, &CheckContext::default(), PortabilityTarget::VsCode)
+                .expect("inspect config");
+        let serialized = serde_json::to_string(&report).expect("serialize report");
+
+        assert_eq!(
+            report.servers[0].portability.as_ref().unwrap().status,
+            PortabilityStatus::Lossy
+        );
+        assert!(!serialized.contains("PRIVATE_TOKEN"));
+    }
+
+    #[test]
+    fn marks_unknown_fields_lossy_instead_of_claiming_portability() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"demo":{"command":"node","alwaysLoad":true}}}"#,
+        )
+        .expect("write config");
+
+        let report =
+            inspect_file_for_target(&config, &CheckContext::default(), PortabilityTarget::Cursor)
+                .expect("inspect config");
+        let portability = report.servers[0].portability.as_ref().unwrap();
+
+        assert_eq!(portability.status, PortabilityStatus::Lossy);
+        assert!(
+            portability
+                .reasons
+                .iter()
+                .any(|reason| reason.code == PortabilityReasonCode::UnmodeledField)
+        );
+    }
+
+    #[test]
+    fn treats_unmodeled_enabled_field_as_lossy_for_other_targets() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            r#"
+                [mcp_servers.demo]
+                command = "node"
+                enabled = true
+            "#,
+        )
+        .expect("write config");
+
+        let report =
+            inspect_file_for_target(&config, &CheckContext::default(), PortabilityTarget::Cursor)
+                .expect("inspect config");
+        let portability = report.servers[0].portability.as_ref().unwrap();
+
+        assert_eq!(portability.status, PortabilityStatus::Lossy);
+        assert!(
+            portability
+                .reasons
+                .iter()
+                .any(|reason| reason.code == PortabilityReasonCode::UnmodeledField)
+        );
+    }
+
+    #[test]
+    fn marks_relative_script_arguments_lossy() {
+        let dir = tempdir().expect("tempdir");
+        let config = dir.path().join("mcp.json");
+        fs::write(
+            &config,
+            r#"{"mcpServers":{"demo":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .expect("write config");
+
+        let report = inspect_file_for_target(
+            &config,
+            &CheckContext::default(),
+            PortabilityTarget::ClaudeCode,
+        )
+        .expect("inspect config");
+
+        assert_eq!(
+            report.servers[0].portability.as_ref().unwrap().status,
+            PortabilityStatus::Lossy
+        );
     }
 
     #[test]
@@ -2448,6 +2841,7 @@ mod tests {
                 servers: vec![ServerReport {
                     name: "MCPBrowser".to_string(),
                     transport: "stdio",
+                    portability: None,
                 }],
                 findings: Vec::new(),
             },
@@ -2456,6 +2850,7 @@ mod tests {
                 servers: vec![ServerReport {
                     name: "mcpbrowser".to_string(),
                     transport: "stdio",
+                    portability: None,
                 }],
                 findings: Vec::new(),
             },
@@ -2482,6 +2877,7 @@ mod tests {
                 servers: vec![ServerReport {
                     name: "alpha".to_string(),
                     transport: "stdio",
+                    portability: None,
                 }],
                 findings: Vec::new(),
             },
@@ -2490,6 +2886,7 @@ mod tests {
                 servers: vec![ServerReport {
                     name: "beta".to_string(),
                     transport: "stdio",
+                    portability: None,
                 }],
                 findings: Vec::new(),
             },
