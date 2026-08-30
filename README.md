@@ -20,7 +20,7 @@ happen before MCP Inspector or a client can start a server: a missing `npx`,
 `uvx`, `bunx`, or runtime binary on `PATH`, an invalid working directory, and
 unresolved environment placeholders.
 
-> Status: Alpha (`v0.1.15` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.16` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
@@ -66,6 +66,16 @@ The same startup failures recur in real client reports:
   [#22842](https://github.com/openai/codex/issues/22842) reports plugin-root
   relative paths that fail when a client resolves them from another working
   directory.
+- Cross-client portability is not uniform. [VS Code #332782](https://github.com/microsoft/vscode/issues/332782)
+  documents configuration, placeholder, `envFile`, transport, OAuth, and
+  sandbox features that are partial or unsupported across Agent Hosts;
+  [Claude Code #56815](https://github.com/anthropics/claude-code/issues/56815)
+  reports a project configuration working in headless mode but not interactive
+  mode, with an absolute-path user-scope workaround that breaks portability.
+  [MCP #2779](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/2779)
+  describes incompatible secret-reference behavior across clients, and
+  [Cline #10894](https://github.com/cline/cline/issues/10894) reports a portable
+  VS Code installation reading a different MCP location.
 
 The related [Stack Overflow `spawn npx` report](https://stackoverflow.com/questions/79534396/spawn-npx-enoent-spawn-npx-enoent-error-in-cline-vscode-mcp-server-connection)
 shows the same failure mode outside one specific client.
@@ -122,6 +132,22 @@ For automation, use stable JSON and fail only when a static check is an error:
 mcp-doctor --format json --ci .vscode/mcp.json
 echo "$?" # 0 = no errors, 1 = check error, 2 = input error
 ```
+
+Report known compatibility risks in modeled stdio constructs for a target client:
+
+```bash
+mcp-doctor --portability-target codex --format json --ci .vscode/mcp.json
+```
+
+Targets are `codex`, `claude-code`, `vscode`, and `cursor`. Each server is
+classified as `portable`, `lossy`, or `unsupported` with stable reason codes.
+This is a read-only compatibility report: it does not generate, merge, or write
+configuration. The initial rules cover VS Code input/workspace placeholders,
+relative process paths and script arguments, Codex `env_vars`, and VS Code
+`envFile`. `portable` means only that no known risk was found among the modeled
+stdio fields; it is not proof that the complete configuration will be accepted.
+Unknown fields are `lossy`, and features without verified cross-client evidence
+are not guessed.
 
 The default human report identifies the server, location, finding code, and a
 short remediation hint. It never prints configured environment values.
@@ -220,6 +246,12 @@ terminal control characters in human output are escaped. When reading
 `~/.claude.json`, project entries other than the current workspace are ignored.
 Remove secrets before sharing a config file.
 
+Portability analysis never expands placeholders or reads an environment value.
+Messages use generic field-level reasons and deliberately omit placeholder,
+environment-variable, and secret names. `--ci` returns 1 when the selected
+target has a `lossy` or `unsupported` stdio assessment; malformed input remains
+exit 2.
+
 ## MCP Inspector boundary
 
 [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is the
@@ -247,7 +279,8 @@ current-process PATH and `PATHEXT`, deterministic and client-dependent path
 diagnostics, Node.js/uv/Bun launcher runtime prerequisites, placeholder redaction,
 VS Code input references, terminal-safe output, Claude Code user/local scope
 selection, unsupported transports, Codex TOML parsing and discovery, malformed
-input, JSON path encoding, CLI exit codes, and the no-execution boundary.
+input, JSON path encoding, portability classifications, CLI exit codes, and the
+no-execution boundary.
 
 Read the [product specification](docs/PRODUCT_SPEC.md) for the evidence gate,
 supported discovery paths, and stop conditions. See [CONTRIBUTING.md](CONTRIBUTING.md),

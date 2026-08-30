@@ -4,8 +4,10 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 use mcp_doctor::{
-    CheckContext, FileReport, Finding, Severity, annotate_server_name_conflicts, discover_paths,
-    inspect_discovered_file_for_workspace, inspect_file_for_workspace,
+    CheckContext, FileReport, Finding, PortabilityStatus, PortabilityTarget, Severity,
+    annotate_server_name_conflicts, discover_paths, inspect_discovered_file_for_workspace,
+    inspect_discovered_file_for_workspace_and_target, inspect_file_for_workspace,
+    inspect_file_for_workspace_and_target,
 };
 use serde::Serialize;
 
@@ -31,12 +33,37 @@ struct Cli {
     /// Do not inspect discovered paths when no CONFIG is supplied.
     #[arg(long)]
     no_discover: bool,
+
+    /// Report whether server semantics are portable to another MCP client.
+    #[arg(long, value_enum)]
+    portability_target: Option<PortabilityTargetArg>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum OutputFormat {
     Human,
     Json,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum PortabilityTargetArg {
+    Codex,
+    #[value(name = "claude-code")]
+    ClaudeCode,
+    #[value(name = "vscode")]
+    VsCode,
+    Cursor,
+}
+
+impl From<PortabilityTargetArg> for PortabilityTarget {
+    fn from(value: PortabilityTargetArg) -> Self {
+        match value {
+            PortabilityTargetArg::Codex => Self::Codex,
+            PortabilityTargetArg::ClaudeCode => Self::ClaudeCode,
+            PortabilityTargetArg::VsCode => Self::VsCode,
+            PortabilityTargetArg::Cursor => Self::Cursor,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -52,6 +79,7 @@ struct Summary {
     findings: usize,
     errors: usize,
     warnings: usize,
+    portability_issues: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,14 +99,26 @@ fn main() -> ExitCode {
         discover_paths(&workspace)
     };
     let context = CheckContext::from_system();
+    let portability_target = cli.portability_target.map(PortabilityTarget::from);
     let mut files = Vec::new();
     let mut errors = Vec::new();
 
     for path in paths {
         let inspection = if explicit {
-            inspect_file_for_workspace(&path, &context, &workspace).map(Some)
+            match portability_target {
+                Some(target) => {
+                    inspect_file_for_workspace_and_target(&path, &context, &workspace, target)
+                }
+                None => inspect_file_for_workspace(&path, &context, &workspace),
+            }
+            .map(Some)
         } else {
-            inspect_discovered_file_for_workspace(&path, &context, &workspace)
+            match portability_target {
+                Some(target) => inspect_discovered_file_for_workspace_and_target(
+                    &path, &context, &workspace, target,
+                ),
+                None => inspect_discovered_file_for_workspace(&path, &context, &workspace),
+            }
         };
         match inspection {
             Ok(Some(report)) => files.push(report),
@@ -103,7 +143,7 @@ fn main() -> ExitCode {
     if !output.errors.is_empty() {
         return ExitCode::from(2);
     }
-    if cli.ci && output.summary.errors > 0 {
+    if cli.ci && (output.summary.errors > 0 || output.summary.portability_issues > 0) {
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS
@@ -123,6 +163,12 @@ fn build_output(files: Vec<FileReport>, errors: Vec<InputError>) -> Output {
             .iter()
             .flat_map(|file| file.findings.iter())
             .filter(|finding| finding.severity == Severity::Warning)
+            .count(),
+        portability_issues: files
+            .iter()
+            .flat_map(|file| file.servers.iter())
+            .filter_map(|server| server.portability.as_ref())
+            .filter(|assessment| assessment.status != PortabilityStatus::Portable)
             .count(),
     };
     Output {
@@ -146,6 +192,23 @@ fn print_human(output: &Output) {
                 terminal_text(&server.name),
                 terminal_text(server.transport)
             );
+            if let Some(portability) = &server.portability {
+                println!(
+                    "    Portability to {}: {}",
+                    json_name(&portability.target),
+                    json_name(&portability.status)
+                );
+                for reason in &portability.reasons {
+                    println!(
+                        "      {} [{}]: {}",
+                        serde_json::to_string(&reason.code)
+                            .unwrap_or_else(|_| "\"unknown\"".to_string())
+                            .trim_matches('"'),
+                        reason.location,
+                        reason.message
+                    );
+                }
+            }
         }
         for finding in &file.findings {
             print_finding(finding);
@@ -155,13 +218,21 @@ fn print_human(output: &Output) {
         eprintln!("Input error: {}", terminal_text(&error.message));
     }
     println!(
-        "\nSummary: {} file(s), {} server(s), {} finding(s), {} error(s), {} warning(s)",
+        "\nSummary: {} file(s), {} server(s), {} finding(s), {} error(s), {} warning(s), {} portability issue(s)",
         output.summary.files,
         output.summary.servers,
         output.summary.findings,
         output.summary.errors,
-        output.summary.warnings
+        output.summary.warnings,
+        output.summary.portability_issues
     );
+}
+
+fn json_name(value: &impl Serialize) -> String {
+    serde_json::to_string(value)
+        .unwrap_or_else(|_| "\"unknown\"".to_string())
+        .trim_matches('"')
+        .to_string()
 }
 
 fn print_finding(finding: &Finding) {

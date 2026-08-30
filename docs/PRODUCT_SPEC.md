@@ -4,7 +4,20 @@
 
 ## Evidence-backed problem
 
-Windows GUI integrations can reject otherwise usable MCP files when path interpolation or JSON parsing differs from the CLI. See the reported `Invalid MCP configuration` case in [desktop-cc-gui#1080](https://github.com/zhukunpenglinyutong/desktop-cc-gui/issues/1080).
+Windows GUI integrations can reject otherwise usable MCP files when path
+interpolation or JSON parsing differs from the CLI. See the reported
+`Invalid MCP configuration` case in
+[desktop-cc-gui#1080](https://github.com/zhukunpenglinyutong/desktop-cc-gui/issues/1080).
+
+Configuration portability is also a demonstrated cross-client boundary.
+[VS Code #332782](https://github.com/microsoft/vscode/issues/332782) publishes
+a support matrix where client config locations, `${input:...}` and workspace
+placeholders, `envFile`, transports, OAuth, and sandbox features are skipped or
+only partially supported by other Agent Hosts. [Claude Code #56815](https://github.com/anthropics/claude-code/issues/56815)
+reports identical project-scope configuration behaving differently between
+interactive and headless modes, while [MCP #2779](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/2779)
+documents the lack of a portable credential-reference model. [Cline #10894](https://github.com/cline/cline/issues/10894)
+shows portable installations can also change the authoritative config path.
 
 People configuring local MCP servers repeatedly hit launch failures before a
 protocol request is ever made: `npx` is not on the client process `PATH`, Node
@@ -211,10 +224,24 @@ mcp-doctor [OPTIONS] [CONFIG ...]
   --format human|json     Output format (default: human)
   --ci                    Exit 1 when a check error is found; exit 2 for input errors
   --no-discover           Inspect only explicit CONFIG paths
+  --portability-target    codex|claude-code|vscode|cursor
 ```
 
 With no explicit path, discovery runs. A missing discovered file is not an
 error; an explicitly named missing file is an input error.
+
+When `--portability-target` is present, supported stdio servers receive a
+`portable`, `lossy`, or `unsupported` assessment with stable reason codes.
+The first rule set covers client-specific VS Code placeholders, relative
+command/cwd and script-argument semantics, Codex `env_vars`, and VS Code
+`envFile`. The serialized assessment identifies its scope as
+`modeled_stdio_semantics`. `portable` means no known risk was found among those
+modeled fields, not that the target client is guaranteed to accept the complete
+configuration. Unknown fields are classified as `lossy`. The report is
+deliberately read-only: it never writes a converted file, merges scopes, expands
+a placeholder, retrieves a secret, or claims that unmodeled fields are
+compatible. In `--ci` mode any non-portable assessment is exit 1; parsing and
+input failures remain exit 2.
 
 ## Difference from MCP Inspector
 
@@ -236,3 +263,8 @@ conflict without exposing a secret or running a server. Stop expanding the
 parser when a format lacks independent compatibility evidence; validate demand
 through concrete issue or discussion reports before adding another client
 format or a process execution mode.
+
+The portability slice is successful when it identifies a known client-only
+placeholder, client-specific secret reference, or ambiguous relative process
+path without echoing its value or modifying the source. It is not a config
+sync, converter, keychain manager, OAuth client, or automatic repair tool.

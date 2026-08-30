@@ -19,7 +19,7 @@ Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `n
 `bunx` 或所需 runtime、工作目录无效、环境变量占位符未解析。这些问题通常
 发生在 MCP Inspector 或客户端真正启动 server 之前。
 
-> 状态：Alpha（`v0.1.15` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
+> 状态：Alpha（`v0.1.16` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
 
 ## 为什么需要它
@@ -57,6 +57,14 @@ Stack Overflow 的
 公开 MCP 报告还显示 `uvx` 和 `bunx` 的启动故障，例如
 [Kaiden #2393](https://github.com/openkaiden/kaiden/issues/2393) 和
 [JetBrains CC GUI #1275](https://github.com/zhukunpenglinyutong/jetbrains-cc-gui/issues/1275)。
+
+跨客户端可移植性并不统一。[VS Code #332782](https://github.com/microsoft/vscode/issues/332782)
+记录了不同 Agent Host 对配置位置、placeholder、`envFile`、transport、OAuth 和 sandbox
+能力的部分支持或不支持；[Claude Code #56815](https://github.com/anthropics/claude-code/issues/56815)
+报告同一项目配置在 headless 模式可用、interactive 模式不可用，而迁移到 user scope
+又被迫使用破坏跨机器可移植性的绝对路径。[MCP #2779](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/2779)
+描述了客户端之间不兼容的 secret reference 行为；[Cline #10894](https://github.com/cline/cline/issues/10894)
+则报告 Portable VS Code 使用了不同的 MCP 配置位置。
 
 ## 安装
 
@@ -105,6 +113,19 @@ mcp-doctor
 mcp-doctor --format json --ci .vscode/mcp.json
 echo "$?" # 0 = 无错误，1 = 检查错误，2 = 输入错误
 ```
+
+针对目标客户端检查已建模 stdio 构造的已知兼容性风险：
+
+```bash
+mcp-doctor --portability-target codex --format json --ci .vscode/mcp.json
+```
+
+目标包括 `codex`、`claude-code`、`vscode` 和 `cursor`。每个 server 会被分类为
+`portable`、`lossy` 或 `unsupported`，并附稳定 reason code。这只是只读兼容性报告，
+不会生成、合并或写入配置。首批规则覆盖 VS Code input/workspace placeholder、相对进程
+路径及脚本参数、Codex `env_vars` 和 VS Code `envFile`。`portable` 只表示在已建模的
+stdio 字段中没有发现已知风险，并不证明目标客户端一定接受完整配置；未知字段会被标为
+`lossy`，没有独立跨客户端证据的能力不会被猜测。
 
 默认人类报告会列出 server、位置、诊断代码和简短修复提示，但不会打印配置中的
 环境变量值。
@@ -184,6 +205,10 @@ VS Code 的 `${input:name}` 引用因其值由客户端提供而豁免，不会�
 human 输出会转义终端控制字符。读取 `~/.claude.json` 时会忽略当前工作区之外的
 project 条目。分享配置前请先移除 secret。
 
+可移植性分析不会展开 placeholder 或读取环境变量值。消息只使用通用字段级原因，故意
+省略 placeholder、环境变量和 secret 名称。选择目标后，`--ci` 会在存在 `lossy` 或
+`unsupported` stdio 评估时退出 1；非法输入仍退出 2。
+
 ## 与 MCP Inspector 的边界
 
 [MCP Inspector](https://github.com/modelcontextprotocol/inspector) 是协议调试器，
@@ -202,7 +227,7 @@ cargo clippy --all-targets --locked -- -D warnings
 测试覆盖支持的配置封装、JSONC 注释和尾逗号、当前进程 PATH 与 `PATHEXT`、确定和客户端
 相关的路径诊断、Node.js/uv/Bun launcher runtime 前置条件、占位符脱敏、VS Code 输入引用、终端安全
 输出、不支持的传输、Codex TOML 解析与发现、坏输入、Claude Code user/local scope
-选择、JSON 路径编码、CLI 退出码和“不执行命令”边界。
+选择、JSON 路径编码、可移植性分类、CLI 退出码和“不执行命令”边界。
 
 请阅读[产品规格](docs/PRODUCT_SPEC.zh-CN.md)了解证据门槛、发现路径和停止条件；修改前请阅读
 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)、

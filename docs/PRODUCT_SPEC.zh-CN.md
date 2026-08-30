@@ -4,7 +4,17 @@
 
 ## 有证据的问题
 
-Windows 图形客户端可能因为路径插值或 JSON 解析差异而拒绝命令行可用的 MCP 文件；参见 [desktop-cc-gui#1080](https://github.com/zhukunpenglinyutong/desktop-cc-gui/issues/1080) 报告的 `Invalid MCP configuration` 问题。
+Windows 图形客户端可能因为路径插值或 JSON 解析差异而拒绝命令行可用的 MCP 文件；
+参见 [desktop-cc-gui#1080](https://github.com/zhukunpenglinyutong/desktop-cc-gui/issues/1080)
+报告的 `Invalid MCP configuration` 问题。
+
+配置可移植性也是已有证据的跨客户端边界。[VS Code #332782](https://github.com/microsoft/vscode/issues/332782)
+给出了支持矩阵：客户端配置位置、`${input:...}`/workspace placeholder、`envFile`、
+transport、OAuth 和 sandbox 功能在其他 Agent Host 中会被跳过或只得到部分支持。
+[Claude Code #56815](https://github.com/anthropics/claude-code/issues/56815) 报告同一
+project-scope 配置在 interactive 与 headless 模式表现不同；[MCP #2779](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/2779)
+记录了缺少统一 credential reference 模型；[Cline #10894](https://github.com/cline/cline/issues/10894)
+说明 portable 安装还会改变权威配置路径。
 
 本地 MCP 配置经常在协议请求开始前就启动失败：客户端进程的 `PATH` 中没有
 `npx`，Node 来自宿主应用没有继承的 NVM shell，或者 Windows 路径和工作目录
@@ -162,9 +172,18 @@ mcp-doctor [OPTIONS] [CONFIG ...]
   --format human|json     输出格式（默认 human）
   --ci                    检查错误时退出 1，输入错误退出 2
   --no-discover           只检查显式 CONFIG 路径
+  --portability-target    codex|claude-code|vscode|cursor
 ```
 
 没有显式路径时执行发现。发现路径不存在不是错误；显式指定但不存在的路径是输入错误。
+
+提供 `--portability-target` 后，已支持的 stdio server 会得到 `portable`、`lossy` 或
+`unsupported` 评估以及稳定 reason code。首批规则覆盖 VS Code 客户端专属 placeholder、
+相对 command/cwd 及脚本参数语义、Codex `env_vars` 和 VS Code `envFile`。序列化评估会
+将范围标为 `modeled_stdio_semantics`。`portable` 只表示这些已建模字段中没有发现已知
+风险，不保证目标客户端接受完整配置；未知字段会被标为 `lossy`。报告严格只读：不写
+转换文件、不合并 scope、不展开 placeholder、不获取 secret，也不对未建模字段猜测
+兼容性。`--ci` 下任何非 portable 评估退出 1；解析和输入错误仍退出 2。
 
 ## 与 MCP Inspector 的区别
 
@@ -180,3 +199,7 @@ stdio 和远程传输。MCP Doctor 是协议启动前的预检层，专门处理
 错误工作目录、Codex TOML 语法错误、未解析占位符、缺失的 Codex 远程 bearer token
 环境声明或跨文件 server 名称冲突时，MVP 即成功。没有独立兼容性证据时停止扩展
 解析器；新增客户端格式或进程执行模式前，先用具体 issue/discussion 反馈验证需求。
+
+可移植性功能在不回显值、不修改源文件的前提下识别客户端专属 placeholder、专属 secret
+reference 或有歧义的相对进程路径时即成功。它不是配置同步器、转换器、keychain manager、
+OAuth client 或自动修复工具。

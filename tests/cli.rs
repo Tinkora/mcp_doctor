@@ -80,6 +80,86 @@ fn json_output_is_structured_and_redacted() {
 }
 
 #[test]
+fn json_output_reports_target_portability_without_secret_values() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("mcp.json");
+    fs::write(
+        &config,
+        r#"{"servers":{"demo":{"command":"node","args":["${input:secret-name}"],"env":{"TOKEN":"never-print-this"}}}}"#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--format")
+        .arg("json")
+        .arg("--portability-target")
+        .arg("codex")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(
+        value["files"][0]["servers"][0]["portability"]["status"],
+        "lossy"
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(!stdout.contains("secret-name"));
+    assert!(!stdout.contains("never-print-this"));
+}
+
+#[test]
+fn json_output_uses_stable_vscode_target_and_explicit_scope() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("mcp.json");
+    fs::write(
+        &config,
+        r#"{"servers":{"demo":{"command":"node","args":["--stdio"]}}}"#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--format")
+        .arg("json")
+        .arg("--portability-target")
+        .arg("vscode")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    let portability = &value["files"][0]["servers"][0]["portability"];
+    assert_eq!(portability["target"], "vscode");
+    assert_eq!(portability["scope"], "modeled_stdio_semantics");
+}
+
+#[test]
+fn ci_mode_fails_for_non_portable_target_semantics() {
+    let dir = tempdir().expect("tempdir");
+    let config = dir.path().join("mcp.json");
+    fs::write(
+        &config,
+        r#"{"servers":{"demo":{"command":"node","args":["${workspaceFolder}/server.js"]}}}"#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .arg("--ci")
+        .arg("--portability-target")
+        .arg("cursor")
+        .arg(&config)
+        .output()
+        .expect("run");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("client_specific_placeholder"));
+    assert!(!stdout.contains("server.js"));
+}
+
+#[test]
 fn invalid_toml_errors_do_not_echo_source_lines_in_human_output() {
     let dir = tempdir().expect("tempdir");
     let config = dir.path().join("config.toml");
