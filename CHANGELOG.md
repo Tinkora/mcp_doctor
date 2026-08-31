@@ -6,6 +6,8 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-08-31
+
 ### Added
 
 - Add a bounded, offline `transcript` command for versioned stdio JSONL
