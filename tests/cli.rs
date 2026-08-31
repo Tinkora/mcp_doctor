@@ -8,6 +8,26 @@ fn command() -> Command {
 }
 
 #[test]
+fn bare_transcript_filename_remains_a_configuration_path() {
+    let dir = tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("transcript"),
+        r#"{"mcpServers":{"demo":{"command":"missing-mcp-command"}}}"#,
+    )
+    .expect("write config");
+
+    let output = command()
+        .current_dir(dir.path())
+        .arg("transcript")
+        .output()
+        .expect("run config inspection");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.contains("Server: demo"));
+}
+
+#[test]
 fn human_output_reports_findings_without_failing_by_default() {
     let dir = tempdir().expect("tempdir");
     let config = dir.path().join("mcp.json");

@@ -14,10 +14,9 @@
 </p>
 <!-- markdownlint-enable MD033 -->
 
-`mcp-doctor` 是一个本地、静态的 stdio MCP server 配置预检器。它帮助 AI
-Agent 开发者定位常见的启动前故障：客户端 `PATH` 中找不到 `npx`、`uvx`、
-`bunx` 或所需 runtime、工作目录无效、环境变量占位符未解析。这些问题通常
-发生在 MCP Inspector 或客户端真正启动 server 之前。
+`mcp-doctor` 是一个本地、静态的 stdio MCP server 配置与已捕获 stdio 流量
+预检器。它既能定位客户端启动 server 之前的配置故障，也能在不执行消息的前提下
+检查用户显式提供的握手记录。
 
 > 状态：Alpha（`v0.1.16` 范围）。本版本只有 CLI，不会启动配置中的命令，也不
 > 会连接任何 MCP server。
@@ -130,6 +129,29 @@ stdio 字段中没有发现已知风险，并不证明目标客户端一定接�
 默认人类报告会列出 server、位置、诊断代码和简短修复提示，但不会打印配置中的
 环境变量值。
 
+### 检查离线 stdio transcript
+
+`transcript` 命令读取版本化 JSONL capture。每条记录包含方向和精确的单行 stdio
+payload：
+
+```json
+{"schema_version":1,"direction":"client_to_server","payload":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}"}
+```
+
+```bash
+mcp-doctor transcript session.jsonl
+mcp-doctor --format json --ci transcript session.jsonl
+```
+
+方向为 `client_to_server` 或 `server_to_client`。检查会报告 server stdout 中的
+非 JSON 内容、消息内换行、无效 JSON-RPC 结构、initialize 握手顺序错误和重复
+initialize。文件以流式方式读取：解码后 payload 最大 1 MiB，单条 JSONL record
+最大 4 MiB，每个文件最大 64 MiB、100,000 条记录。报告不会包含 payload、request
+ID、参数、结果或 error data。
+
+该模式不会捕获流量、启动 server、连接远程 transport、执行消息或证明协议兼容性；
+它只检查用户提供的版本化本地 capture。
+
 同时检查多个文件时，完全同名或仅大小写不同的 stdio server 会在每个受影响文件中
 收到 `server_name_conflict` warning。不同客户端和版本的优先级并不一致，因此 MCP
 Doctor 不会替客户端选择胜出定义。
@@ -196,14 +218,15 @@ MCP catalog、协议握手和 server 执行均不在范围内。
 
 ## 安全与隐私
 
-MCP Doctor 默认只读。它读取指定 JSON、JSONC、Codex TOML 和文件元数据，读取进程
+MCP Doctor 默认只读。配置模式读取指定 JSON、JSONC、Codex TOML 和文件元数据，读取进程
 `PATH` 来检查裸命令可发现性，并只保留进程环境变量名称用于 Codex 远程认证存在性
 检查。它不会启动进程、发起网络请求、获取匹配的环境变量值，也不会在报告中包含配置
 的环境变量值或 bearer token 变量名称。占位符诊断使用通用消息，不回显占位符 token；
 VS Code 的 `${input:name}` 引用因其值由客户端提供而豁免，不会读取进程环境。Codex
 `env_vars` 的值不会被读取；其他环境变量 key 和 server 名称可能作为位置出现，但
 human 输出会转义终端控制字符。读取 `~/.claude.json` 时会忽略当前工作区之外的
-project 条目。分享配置前请先移除 secret。
+project 条目。分享配置前请先移除 secret。Transcript 模式不会读取 `PATH` 或环境变量名，
+也不会输出 capture payload；但 capture 本身仍可能包含 secret，未经独立脱敏不得分享。
 
 可移植性分析不会展开 placeholder 或读取环境变量值。消息只使用通用字段级原因，故意
 省略 placeholder、环境变量和 secret 名称。选择目标后，`--ci` 会在存在 `lossy` 或

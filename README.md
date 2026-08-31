@@ -15,10 +15,9 @@
 <!-- markdownlint-enable MD033 -->
 
 `mcp-doctor` is a local, static preflight checker for stdio MCP server
-configuration. It helps an agent developer find the launch failures that often
-happen before MCP Inspector or a client can start a server: a missing `npx`,
-`uvx`, `bunx`, or runtime binary on `PATH`, an invalid working directory, and
-unresolved environment placeholders.
+configuration and captured stdio traffic. It helps an agent developer find the
+launch failures that often happen before MCP Inspector or a client can start a
+server, and can lint an explicitly captured handshake without executing it.
 
 > Status: Alpha (`v0.1.16` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
@@ -152,6 +151,31 @@ are not guessed.
 The default human report identifies the server, location, finding code, and a
 short remediation hint. It never prints configured environment values.
 
+### Lint an offline stdio transcript
+
+The `transcript` command reads a versioned JSONL capture. Each record contains
+the direction and exact single-line stdio payload:
+
+```json
+{"schema_version":1,"direction":"client_to_server","payload":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}"}
+```
+
+```bash
+mcp-doctor transcript session.jsonl
+mcp-doctor --format json --ci transcript session.jsonl
+```
+
+Directions are `client_to_server` and `server_to_client`. The linter reports
+non-JSON server stdout, embedded newlines, invalid JSON-RPC message shapes,
+an out-of-order initialize handshake, and duplicate initialize requests. It
+streams the file with limits of 1 MiB per decoded payload, 4 MiB per JSONL
+record, 64 MiB and 100,000 records per file. Captured payloads, request IDs,
+parameters, results, and error data are never included in reports.
+
+This mode does not capture traffic, start a server, connect to a remote
+transport, execute a message, or prove protocol compatibility. It only checks
+the versioned local capture supplied by the user.
+
 When multiple files are inspected, exact or case-only duplicate stdio server
 names receive a `server_name_conflict` warning in each affected file. MCP
 Doctor does not choose a winner because precedence differs across clients and
@@ -232,11 +256,11 @@ compatibility evidence justify them.
 
 ## Safety and privacy
 
-MCP Doctor is read-only by default. It reads the selected JSON, JSONC, or Codex
-TOML file and file metadata, reads the process `PATH` to test bare command
-discoverability, and retains process environment names only for the Codex
-remote-auth presence check. It does not spawn a process, perform a network
-request, retrieve a matching environment value, or include configured
+MCP Doctor is read-only by default. Configuration mode reads the selected JSON,
+JSONC, or Codex TOML file and file metadata, then reads the process `PATH` to
+test bare command discoverability. It retains process environment names only
+for the Codex remote-auth presence check. It does not spawn a process, perform
+a network request, retrieve a matching environment value, or include configured
 environment values or bearer-token variable names in its reports. Placeholder
 diagnostics are generic and do not echo the placeholder token. VS Code
 `${input:name}` references are exempt because their values are provided by the
@@ -244,7 +268,9 @@ client, not read from the process environment. Codex `env_vars` values are not
 read. Other environment keys and server names can appear as locations, while
 terminal control characters in human output are escaped. When reading
 `~/.claude.json`, project entries other than the current workspace are ignored.
-Remove secrets before sharing a config file.
+Remove secrets before sharing a config file. Transcript mode does not read
+`PATH` or environment names and never emits captured payloads, but captures can
+still contain secrets and should not be shared without independent redaction.
 
 Portability analysis never expands placeholders or reads an environment value.
 Messages use generic field-level reasons and deliberately omit placeholder,

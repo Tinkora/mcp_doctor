@@ -6,6 +6,13 @@ All notable changes to MCP Doctor are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add a bounded, offline `transcript` command for versioned stdio JSONL
+  captures. It reports stdout pollution, embedded newlines, malformed JSON-RPC,
+  initialize ordering, and duplicate initialization without executing or
+  echoing captured messages.
+
 ## [0.1.16] - 2026-08-30
 
 ### Added

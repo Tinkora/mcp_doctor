@@ -95,6 +95,19 @@ Codex [#22842](https://github.com/openai/codex/issues/22842) reports plugin-root
 relative paths failing when a client resolves them from another working
 directory.
 
+Protocol traffic has a separate, evidence-backed offline diagnostic boundary.
+The MCP stdio transport requires newline-delimited UTF-8 JSON-RPC messages and
+forbids non-MCP data on server stdout. The lifecycle requires the client
+`initialize` request, matching server response, and client
+`notifications/initialized` notification in that order. See the official
+[stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio)
+and [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#initialization)
+rules. Real HTTP/SSE failures in
+[python-sdk #1366](https://github.com/modelcontextprotocol/python-sdk/issues/1366),
+[#680](https://github.com/modelcontextprotocol/python-sdk/issues/680), and
+[MCP #907](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/907)
+show why this release must not infer HTTP behavior from a stdio-only capture.
+
 ## Smallest useful outcome
 
 Given an explicit JSON, JSONC, or Codex TOML configuration or a small set of
@@ -150,8 +163,25 @@ values.
 - Codex plugin manifests and lifecycle settings are not resolved. Discovered
   plugin-cache `.mcp.json` files are inspected as standalone configurations;
   plugin-provided merge and path semantics are out of scope.
-- YAML, catalog files, protocol handshakes, and remote transports are
-  intentionally out of scope until independent compatibility evidence exists.
+- YAML, catalog files, active protocol handshakes, and remote transports are
+  intentionally out of configuration discovery scope. The separate transcript
+  command accepts only the explicit versioned stdio JSONL format below.
+
+### Offline transcript boundary
+
+`mcp-doctor transcript` accepts one or more JSONL files. Each outer record has
+exactly `schema_version: 1`, a `direction` of `client_to_server` or
+`server_to_client`, and a string `payload` containing one captured stdio line.
+It checks framing, JSON-RPC shape, the observed initialize sequence, and
+duplicate initialize requests. It does not capture traffic or infer missing
+events from a partial file.
+
+The reader is bounded to a 1 MiB decoded payload, 4 MiB outer record, 64 MiB
+and 100,000 records per file. It never emits payloads, request IDs, params,
+results, or error data. Invalid outer envelopes and resource-limit failures are
+input errors; protocol findings follow the normal `--ci` exit-code contract.
+HTTP exchanges, SSE, OAuth, capabilities, tool schemas, timing, process state,
+and arbitrary vendor log wrappers remain out of scope.
 
 Automatic discovery is intentionally conservative: the current workspace
 `.codex/config.toml`, `.devcontainer/devcontainer.json`, `.vscode/mcp.json`,
@@ -211,6 +241,9 @@ envelope.
   definition a specific client version will select.
 - The default command only reads files and metadata. There is no `--run` or
   implicit process spawn in this release.
+- Transcript mode runs before configuration context is created. It does not
+  inspect `PATH` or environment names, execute captured data, spawn a process,
+  or perform a network request.
 - Plugin-cache discovery is bounded to three directory levels and 128 files; it
   does not follow directory symlinks or connect to a plugin.
 - Human output escapes terminal control characters from configuration content.
@@ -225,6 +258,8 @@ mcp-doctor [OPTIONS] [CONFIG ...]
   --ci                    Exit 1 when a check error is found; exit 2 for input errors
   --no-discover           Inspect only explicit CONFIG paths
   --portability-target    codex|claude-code|vscode|cursor
+
+mcp-doctor [--format human|json] [--ci] transcript <TRANSCRIPT ...>
 ```
 
 With no explicit path, discovery runs. A missing discovered file is not an
@@ -262,7 +297,11 @@ Codex remote bearer-token environment declaration, or cross-file server name
 conflict without exposing a secret or running a server. Stop expanding the
 parser when a format lacks independent compatibility evidence; validate demand
 through concrete issue or discussion reports before adding another client
-format or a process execution mode.
+format or a process execution mode. The transcript slice is successful when a
+captured stdio handshake exposes stdout pollution, invalid JSON-RPC framing, or
+an observed initialize-order violation without replaying or exposing the
+capture. Stop before HTTP or OAuth diagnostics unless their full exchange
+metadata and privacy boundary can be modeled without active authentication.
 
 The portability slice is successful when it identifies a known client-only
 placeholder, client-specific secret reference, or ambiguous relative process
