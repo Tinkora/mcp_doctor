@@ -19,7 +19,7 @@ configuration and captured stdio traffic. It helps an agent developer find the
 launch failures that often happen before MCP Inspector or a client can start a
 server, and can lint an explicitly captured handshake without executing it.
 
-> Status: Alpha (`v0.1.16` scope). This release is intentionally CLI-only and
+> Status: Alpha (`v0.1.17` scope). This release is intentionally CLI-only and
 > does not launch configured commands or connect to any MCP server.
 
 ## Why this exists
