@@ -74,6 +74,18 @@ bearer 认证。Codex 的 [#35448](https://github.com/openai/codex/issues/35448)
 Codex 的 [#22842](https://github.com/openai/codex/issues/22842) 还报告 plugin 根目录
 相对路径在客户端从其他工作目录解析时失败。
 
+协议流量存在另一条有证据支持的离线诊断边界。MCP stdio transport 要求使用换行符
+分隔 UTF-8 JSON-RPC 消息，并禁止 server stdout 混入非 MCP 内容；lifecycle 要求
+client `initialize` request、匹配的 server response、client
+`notifications/initialized` notification 按顺序出现。参见官方
+[stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio)
+和 [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#initialization)。
+[python-sdk #1366](https://github.com/modelcontextprotocol/python-sdk/issues/1366)、
+[#680](https://github.com/modelcontextprotocol/python-sdk/issues/680) 和
+[MCP #907](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/907)
+显示 HTTP/SSE 需要更多 exchange 元数据，因此本版本不能从 stdio capture 推断
+HTTP 行为。
+
 ## 最小可用结果
 
 给定 JSON、JSONC、Codex TOML 配置或少量约定的本地配置路径，`mcp-doctor`
@@ -114,7 +126,21 @@ Codex 的 [#22842](https://github.com/openai/codex/issues/22842) 还报告 plugi
   传输诊断，也不会发起连接。Codex bearer token 存在性检查是唯一远程条目预检。
 - 不解析 Codex plugin manifest 和 lifecycle 设置；发现的 plugin cache `.mcp.json` 只会
   作为独立配置检查，plugin 提供的合并和路径语义不在范围内。
-- YAML、catalog、协议握手和远程传输暂不支持，等待独立兼容性证据。
+- YAML、catalog、主动协议握手和远程传输不属于配置发现范围。独立 transcript 命令
+  只接受下述显式、版本化 stdio JSONL 格式。
+
+### 离线 transcript 边界
+
+`mcp-doctor transcript` 接受一个或多个 JSONL 文件。每条外层 record 必须只包含
+`schema_version: 1`、方向 `client_to_server` 或 `server_to_client`，以及保存一行
+stdio 消息的字符串 `payload`。它检查 framing、JSON-RPC 结构、观察到的 initialize
+顺序和重复 initialize，但不会捕获流量，也不会根据不完整文件猜测缺失事件。
+
+解码后 payload 最大 1 MiB，外层 record 最大 4 MiB，每个文件最大 64 MiB、
+100,000 条记录。报告不会输出 payload、request ID、params、result 或 error data。
+非法外层 envelope 和资源超限属于输入错误；协议 finding 沿用 `--ci` 退出码契约。
+HTTP exchange、SSE、OAuth、capability、tool schema、计时、进程状态和任意厂商日志
+wrapper 均不在范围内。
 
 自动发现保持保守：当前工作区的 `.codex/config.toml`、
 `.devcontainer/devcontainer.json`、`.vscode/mcp.json`、`.mcp.json`、
@@ -160,6 +186,8 @@ Dev Container 文件通常还包含与 MCP 无关的开发设置。一旦声明
 - 多个已检查条目中完全同名或仅大小写不同的 stdio server 会收到
   `server_name_conflict` warning；诊断不宣称特定客户端版本会选择哪个定义。
 - 默认命令只读文件和元数据；本版本没有 `--run`，也不会隐式启动进程。
+- Transcript 模式在创建配置检查上下文前执行，不读取 `PATH` 或环境变量名，不执行
+  capture，不启动进程，也不发起网络请求。
 - plugin cache 发现只遍历三层目录，最多处理 128 个文件，不跟随目录 symlink，也不连接
   plugin。
 - human 输出会转义配置内容中的终端控制字符；非 UTF-8 JSON 路径使用有损表示，避免
@@ -173,6 +201,8 @@ mcp-doctor [OPTIONS] [CONFIG ...]
   --ci                    检查错误时退出 1，输入错误退出 2
   --no-discover           只检查显式 CONFIG 路径
   --portability-target    codex|claude-code|vscode|cursor
+
+mcp-doctor [--format human|json] [--ci] transcript <TRANSCRIPT ...>
 ```
 
 没有显式路径时执行发现。发现路径不存在不是错误；显式指定但不存在的路径是输入错误。
@@ -199,6 +229,10 @@ stdio 和远程传输。MCP Doctor 是协议启动前的预检层，专门处理
 错误工作目录、Codex TOML 语法错误、未解析占位符、缺失的 Codex 远程 bearer token
 环境声明或跨文件 server 名称冲突时，MVP 即成功。没有独立兼容性证据时停止扩展
 解析器；新增客户端格式或进程执行模式前，先用具体 issue/discussion 反馈验证需求。
+
+Transcript 功能在不重放、不暴露 capture 的前提下识别 stdout 污染、非法 JSON-RPC
+framing 或观察到的 initialize 顺序违规时即成功。在完整 exchange 元数据和隐私边界
+可以被动建模前，不扩展到 HTTP 或 OAuth 诊断。
 
 可移植性功能在不回显值、不修改源文件的前提下识别客户端专属 placeholder、专属 secret
 reference 或有歧义的相对进程路径时即成功。它不是配置同步器、转换器、keychain manager、

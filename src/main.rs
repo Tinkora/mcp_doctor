@@ -2,7 +2,10 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
+use mcp_doctor::transcript::{
+    TranscriptFinding, TranscriptReport, TranscriptSeverity, inspect_transcript,
+};
 use mcp_doctor::{
     CheckContext, FileReport, Finding, PortabilityStatus, PortabilityTarget, Severity,
     annotate_server_name_conflicts, discover_paths, inspect_discovered_file_for_workspace,
@@ -15,19 +18,22 @@ use serde::Serialize;
 #[command(
     name = "mcp-doctor",
     version,
-    about = "Static preflight checks for local stdio MCP configurations"
+    about = "Static checks for local stdio MCP configuration and captured traffic"
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Configuration files to inspect. Without paths, known local paths are discovered.
     #[arg(value_name = "CONFIG")]
     configs: Vec<PathBuf>,
 
     /// Output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+    #[arg(long, value_enum, default_value_t = OutputFormat::Human, global = true)]
     format: OutputFormat,
 
     /// Return exit code 1 when a check error is found.
-    #[arg(long)]
+    #[arg(long, global = true)]
     ci: bool,
 
     /// Do not inspect discovered paths when no CONFIG is supplied.
@@ -37,6 +43,16 @@ struct Cli {
     /// Report whether server semantics are portable to another MCP client.
     #[arg(long, value_enum)]
     portability_target: Option<PortabilityTargetArg>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Inspect versioned JSONL captures of MCP stdio traffic without executing it.
+    Transcript {
+        /// Transcript files to inspect.
+        #[arg(value_name = "TRANSCRIPT")]
+        transcripts: Vec<PathBuf>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -89,8 +105,47 @@ struct Output {
     summary: Summary,
 }
 
+#[derive(Debug, Serialize)]
+struct TranscriptInputError {
+    path: String,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TranscriptSummary {
+    transcripts: usize,
+    records: usize,
+    findings: usize,
+    errors: usize,
+    warnings: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct TranscriptOutput {
+    schema_version: u8,
+    kind: &'static str,
+    transcripts: Vec<TranscriptReport>,
+    errors: Vec<TranscriptInputError>,
+    summary: TranscriptSummary,
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    if let Some(Command::Transcript { transcripts }) = cli.command.take() {
+        if transcripts.is_empty() && PathBuf::from("transcript").is_file() {
+            cli.configs.push(PathBuf::from("transcript"));
+        } else if transcripts.is_empty() {
+            eprintln!("error: transcript requires at least one TRANSCRIPT path");
+            return ExitCode::from(2);
+        } else if cli.no_discover || cli.portability_target.is_some() || !cli.configs.is_empty() {
+            eprintln!(
+                "error: transcript cannot be combined with configuration paths, --no-discover, or --portability-target"
+            );
+            return ExitCode::from(2);
+        } else {
+            return run_transcript(transcripts, cli.format, cli.ci);
+        }
+    }
     let workspace = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let explicit = !cli.configs.is_empty();
     let paths = if explicit || cli.no_discover {
@@ -147,6 +202,104 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS
+}
+
+fn run_transcript(paths: Vec<PathBuf>, format: OutputFormat, ci: bool) -> ExitCode {
+    let mut transcripts = Vec::new();
+    let mut errors = Vec::new();
+    for path in paths {
+        match inspect_transcript(&path) {
+            Ok(report) => transcripts.push(report),
+            Err(error) => errors.push(TranscriptInputError {
+                path: path.to_string_lossy().into_owned(),
+                message: error.to_string(),
+            }),
+        }
+    }
+    let output = build_transcript_output(transcripts, errors);
+    match format {
+        OutputFormat::Human => print_transcript_human(&output),
+        OutputFormat::Json => {
+            if !print_json(&output) {
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if !output.errors.is_empty() {
+        return ExitCode::from(2);
+    }
+    if ci && output.summary.errors > 0 {
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+fn build_transcript_output(
+    transcripts: Vec<TranscriptReport>,
+    errors: Vec<TranscriptInputError>,
+) -> TranscriptOutput {
+    let findings = transcripts
+        .iter()
+        .flat_map(|report| report.findings.iter())
+        .collect::<Vec<_>>();
+    let summary = TranscriptSummary {
+        transcripts: transcripts.len(),
+        records: transcripts.iter().map(|report| report.records).sum(),
+        findings: findings.len(),
+        errors: findings
+            .iter()
+            .filter(|finding| finding.severity == TranscriptSeverity::Error)
+            .count(),
+        warnings: findings
+            .iter()
+            .filter(|finding| finding.severity == TranscriptSeverity::Warning)
+            .count(),
+    };
+    TranscriptOutput {
+        schema_version: 1,
+        kind: "mcp_transcript",
+        transcripts,
+        errors,
+        summary,
+    }
+}
+
+fn print_transcript_human(output: &TranscriptOutput) {
+    println!("MCP Doctor (offline stdio transcript lint)");
+    for transcript in &output.transcripts {
+        println!(
+            "\nTranscript: {}",
+            terminal_text(&transcript.path.to_string_lossy())
+        );
+        for finding in &transcript.findings {
+            print_transcript_finding(finding);
+        }
+    }
+    for error in &output.errors {
+        eprintln!("Input error: {}", terminal_text(&error.message));
+    }
+    println!(
+        "\nSummary: {} transcript(s), {} record(s), {} finding(s), {} error(s), {} warning(s)",
+        output.summary.transcripts,
+        output.summary.records,
+        output.summary.findings,
+        output.summary.errors,
+        output.summary.warnings
+    );
+}
+
+fn print_transcript_finding(finding: &TranscriptFinding) {
+    let severity = match finding.severity {
+        TranscriptSeverity::Error => "ERROR",
+        TranscriptSeverity::Warning => "WARN",
+    };
+    println!(
+        "  {severity} {code} [line {line}::{direction}]: {message}",
+        code = json_name(&finding.code),
+        line = finding.line,
+        direction = json_name(&finding.direction),
+        message = finding.message
+    );
 }
 
 fn build_output(files: Vec<FileReport>, errors: Vec<InputError>) -> Output {
@@ -253,7 +406,7 @@ fn print_finding(finding: &Finding) {
     );
 }
 
-fn print_json(output: &Output) -> bool {
+fn print_json(output: &impl Serialize) -> bool {
     match serde_json::to_string_pretty(output) {
         Ok(value) => {
             println!("{value}");

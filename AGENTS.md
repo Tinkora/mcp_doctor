@@ -3,11 +3,13 @@
 ## Product boundary
 
 MCP Doctor is a read-only CLI for static checks of local JSON/JSONC and Codex
-TOML stdio MCP server configuration. It must not launch configured commands,
-connect to remote transports, expand configured environment variables, or
-print their values. Supported envelopes are top-level `mcpServers`, `servers`,
-and Codex `mcp_servers`; add another client format only after independent
-compatibility evidence is recorded in the product specification.
+TOML stdio MCP server configuration, plus bounded offline linting of explicitly
+captured stdio transcripts. It must not launch configured commands, connect to
+remote transports, expand configured environment variables, execute captured
+messages, or print their payloads. Supported configuration envelopes are
+top-level `mcpServers`, `servers`, and Codex `mcp_servers`; add another client
+format or transcript transport only after independent compatibility evidence
+is recorded in the product specification.
 
 ## Development
 

@@ -1,5 +1,7 @@
 //! Library API for static MCP stdio configuration diagnostics.
 
+pub mod transcript;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
